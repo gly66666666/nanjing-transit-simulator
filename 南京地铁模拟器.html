@@ -113,6 +113,7 @@ body.mode-edit .lineList{max-height:186px}
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
 .lineItem .nm{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lineItem .ct{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--dim);white-space:nowrap}
+.grpHead{font-family:var(--mono);font-size:9px;letter-spacing:.08em;color:var(--dim);padding:5px 2px 1px;opacity:.72}
 .lineItem .dot{width:6px;height:6px;border-radius:50%;background:var(--good);flex:0 0 6px;box-shadow:0 0 6px var(--good)}
 .lineItem.off .dot{background:var(--dim);box-shadow:none}
 
@@ -139,7 +140,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 .seqHead{display:flex;justify-content:space-between;align-items:baseline;margin:11px 0 5px;
   font-size:10px;letter-spacing:.9px;color:var(--dim)}
 .seqHead span:last-child{font-family:var(--mono);letter-spacing:0;color:var(--muted)}
-.seqList{max-height:104px;overflow-y:auto;border:1px solid var(--stroke);border-radius:8px;
+.seqList{flex:0 0 auto;max-height:190px;overflow-y:auto;border:1px solid var(--stroke);border-radius:8px;
   background:rgba(255,255,255,.02);padding:3px;scrollbar-width:thin}
 .seqList::-webkit-scrollbar{width:6px}
 .seqList::-webkit-scrollbar-thumb{background:rgba(120,160,215,.28);border-radius:3px}
@@ -155,8 +156,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 .seqRow:hover .x{opacity:1}
 .seqRow .x:hover{background:rgba(255,90,120,.24);border-color:rgba(255,120,140,.6)}
 .seqRow.locked .x{display:none}
-.seqSplit{display:flex;align-items:center;gap:5px;height:13px;margin:0 3px;cursor:pointer;
-  font-size:8.5px;color:rgba(120,150,190,.6);opacity:.6;transition:.12s;border-radius:4px}
+.seqSplit{display:flex;align-items:center;gap:5px;height:16px;margin:1px 3px;cursor:pointer;
+  font-size:10px;color:rgba(150,190,235,.9);transition:.12s;border-radius:4px}
 .seqSplit::before,.seqSplit::after{content:'';flex:1;height:1px;background:rgba(120,160,215,.22)}
 .seqSplit:hover{opacity:1;color:#9fd0ff;background:rgba(77,163,255,.10)}
 .seqSplit:hover::before,.seqSplit:hover::after{background:rgba(120,180,250,.5)}
@@ -410,13 +411,16 @@ body.mode-chart .chartTools{display:flex}
           <button class="btn" id="btnToolDrag">拖站点</button>
           <button class="btn" id="btnToolErase">删站</button>
         </div>
+        <div class="btnRow" style="margin-bottom:7px">
+          <button class="btn ghost" id="btnToolSplit" title="把当前线路从某两站之间拆成两条独立线路">✂ 拆分线路</button>
+        </div>
         <div class="netStat" id="editNetStat">站网 — 站</div>
         <div class="field" style="margin-bottom:8px">
           <label>正在编辑的线路</label>
           <select id="editLineSel"></select>
         </div>
         <div class="seqHead"><span>本线站点 / STOPS</span><span id="edSeqHint">—</span></div>
-        <div class="seqList" id="edSeq" style="max-height:96px"></div>
+        <div class="seqList" id="edSeq" style="max-height:200px"></div>
         <div class="btnRow" style="margin-top:7px">
           <button class="btn ghost" id="btnUndo">撤销一步</button>
           <button class="btn ghost" id="btnFinishLine">结束画线</button>
@@ -489,6 +493,7 @@ body.mode-chart .chartTools{display:flex}
         <span><i style="background:#ff5f74"></i>爆满</span>
         <span>◦ 换乘站</span>
         <span>▬ 列车</span>
+        <span style="color:#ffb95e">┄ 在建线</span>
       </div>
       <div class="zoomBox">
         <button id="zoomIn">＋</button>
@@ -1284,6 +1289,19 @@ function lineArms(line) {
   if (!line.arms || !line.arms.length) line.arms = [{ stations: line.stations }];
   line.arms[0].stations = line.stations;
   return line.arms;
+}
+
+/* 主干是否仍与原线定义完全一致：一致时仍可套用真实轨道折线，分叉支线单独画 */
+function mainMatchesDef(line) {
+  if (!line) return false;
+  if (typeof LINE_DEFS === 'undefined' || typeof TRACK === 'undefined') return false;
+  if (!TRACK[line.id]) return false;
+  const def = LINE_DEFS.find(d => d.id === line.id);
+  if (!def || !def.stations) return false;
+  const main = lineArms(line)[0].stations;
+  if (main.length !== def.stations.length) return false;
+  for (let i = 0; i < main.length; i++) if (main[i] !== def.stations[i]) return false;
+  return true;
 }
 
 function refreshSegs() {
@@ -2118,8 +2136,8 @@ function lineAttach(line, anchorSid, stationId) {
       arms.push(branch); mode = 'branch';
     }
   }
-  // 只要线路不再是原始单一臂形态，就不再套用真实轨道折线
-  App.trackOff[line.id] = 1;
+  // 主干被改动（插站/换端）时才放弃真实轨道折线；纯分叉不影响主干几何
+  if (!mainMatchesDef(line)) App.trackOff[line.id] = 1;
   refreshSegs();
   rebuildGraph();
   return { ok: true, mode, arm: mode === 'branch' ? arms.length - 1 : anchorArm };
@@ -2413,28 +2431,32 @@ function drawLines() {
     const arms = lineArms(line);
     if (!arms.some(a => a.stations.length >= 2)) continue;
     const off = App.trackOff && App.trackOff[line.id];
-    const tk = (typeof TRACK !== 'undefined' && !off) ? TRACK[line.id] : null;
+    const tk = off ? null : trackOf(line.id);
     const paths = [];
-    if (tk && arms.length === 1) {
-      paths.push(tk.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY)));
-    } else {
-      for (const arm of arms) {
-        if (arm.stations.length < 2) continue;
-        const pts = arm.stations.map(id => {
-          const st = App.stations.get(id);
-          return st ? w2s(st.x, st.y) : null;
-        }).filter(Boolean);
-        if (pts.length >= 2) paths.push(pts);
-      }
+    const useTrack = !!tk && mainMatchesDef(line);
+    if (useTrack) paths.push(tk.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY)));
+    for (let ai = useTrack ? 1 : 0; ai < arms.length; ai++) {
+      const arm = arms[ai];
+      if (arm.stations.length < 2) continue;
+      const pts = arm.stations.map(id => {
+        const st = App.stations.get(id);
+        return st ? w2s(st.x, st.y) : null;
+      }).filter(Boolean);
+      if (pts.length >= 2) paths.push(pts);
     }
     const sel = line.id === App.selectedLine || line.id === App.editingLine;
     const on = line.enabled;
+    // 在建线路画虚线，与运营线（含同为橙色系的 S4/S8）区分开
+    const bld = typeof BUILDING_IDS !== 'undefined' && BUILDING_IDS.indexOf(line.id) >= 0;
+    const dash = bld ? [lw * 2.4, lw * 1.8] : null;
 
     // 外描边（暗色线在深底上的可读性靠浅色边）
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(206,226,248,0.22)';
     ctx.lineWidth = lw + 3.2;
+    if (dash) ctx.setLineDash(dash);
     for (const pts of paths) { smoothPath(pts); ctx.stroke(); }
+    ctx.setLineDash([]);
 
     if (!on) {
       ctx.setLineDash([6, 7]);
@@ -2445,6 +2467,8 @@ function drawLines() {
       continue;
     }
 
+    ctx.lineCap = 'butt';
+    if (dash) ctx.setLineDash(dash);
     if (sel) {
       ctx.save();
       ctx.shadowColor = line.color;
@@ -2464,6 +2488,8 @@ function drawLines() {
       ctx.lineWidth = Math.max(1, lw * (sel ? 0.34 : 0.28));
       for (const pts of paths) { smoothPath(pts); ctx.stroke(); }
     }
+    ctx.setLineDash([]);
+    ctx.lineCap = 'round';
   }
 }
 
@@ -2792,25 +2818,27 @@ function chartGraph() {
     nodes[a].links.push({ m: b, t });
   };
   for (const line of App.lines) {
-    const seq = line.stations;
-    const ii = seq.map(id => (idx.has(id) ? idx.get(id) : null));
-    for (let k = 0; k < seq.length - 1; k++) {
-      const a = ii[k], b = ii[k + 1];
-      if (a == null || b == null || a === b) continue;
-      const A = nodes[a].st, B = nodes[b].st;
-      const t = chartHopTarget(Math.hypot(B.x - A.x, B.y - A.y));
-      const key = a < b ? a + '_' + b : b + '_' + a;
-      edges.push({ a, b, key, line: line.id, t });
-      if (!seen.has(key)) {
-        seen.set(key, { t });
-        linkTo(a, b, t); linkTo(b, a, t);
-        nodes[a].deg++; nodes[b].deg++;
-      } else {
-        const old = seen.get(key);
-        if (t < old.t) { old.t = t; linkTo(a, b, t); linkTo(b, a, t); }
+    for (const arm of lineArms(line)) {
+      const seq = arm.stations;
+      const ii = seq.map(id => (idx.has(id) ? idx.get(id) : null));
+      for (let k = 0; k < seq.length - 1; k++) {
+        const a = ii[k], b = ii[k + 1];
+        if (a == null || b == null || a === b) continue;
+        const A = nodes[a].st, B = nodes[b].st;
+        const t = chartHopTarget(Math.hypot(B.x - A.x, B.y - A.y));
+        const key = a < b ? a + '_' + b : b + '_' + a;
+        edges.push({ a, b, key, line: line.id, t });
+        if (!seen.has(key)) {
+          seen.set(key, { t });
+          linkTo(a, b, t); linkTo(b, a, t);
+          nodes[a].deg++; nodes[b].deg++;
+        } else {
+          const old = seen.get(key);
+          if (t < old.t) { old.t = t; linkTo(a, b, t); linkTo(b, a, t); }
+        }
       }
+      for (let k = 1; k < ii.length - 1; k++) pushTurn(ii[k], ii[k - 1], ii[k + 1]);
     }
-    for (let k = 1; k < ii.length - 1; k++) pushTurn(ii[k], ii[k - 1], ii[k + 1]);
   }
   return { nodes, edges };
 }
@@ -2989,7 +3017,7 @@ function chartSolve(nodes, seed) {
 /* ---------------- 3. 生成布局 ---------------- */
 function chartSignature() {
   let sig = App.lines.length + '|' + App.stations.size;
-  for (const l of App.lines) sig += '#' + l.id + (l.enabled ? '1' : '0') + ':' + l.stations.join(',');
+  for (const l of App.lines) sig += '#' + l.id + (l.enabled ? '1' : '0') + ':' + lineArms(l).map(a => a.stations.join(',')).join('|');
   for (const st of App.stations.values()) sig += '@' + Math.round(st.x * 40) + ',' + Math.round(st.y * 40);
   return sig;
 }
@@ -3054,7 +3082,7 @@ function computeChart(force) {
 
 /* ---------------- 4. 版面与相机 ---------------- */
 function chartBandSpec(vw) {
-  const nLine = App.lines.filter(l => l.stations.length > 1).length || 1;
+  const nLine = App.lines.filter(l => lineArms(l).some(a => a.stations.length > 1)).length || 1;
   const cols = Math.max(3, Math.min(8, Math.floor((vw - 208) / 98)));
   const rows = Math.max(1, Math.ceil(nLine / cols));
   return { headerH: 92, legendBand: 26 + rows * 21, cols, rows };
@@ -3119,7 +3147,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
 
   const sidePad = 44 * k;
   const headerH = 92 * k;
-  const nLine = App.lines.filter(l => l.stations.length > 1).length || 1;
+  const nLine = App.lines.filter(l => lineArms(l).some(a => a.stations.length > 1)).length || 1;
   const sheetW = Math.max(cX1 - cX0 + sidePad * 2, 840 * k);
   const legendCols = Math.max(3, Math.min(8, Math.floor((sheetW - sidePad * 2 - 120 * k) / (98 * k))));
   const legendRows = Math.max(1, Math.ceil(nLine / legendCols));
@@ -3131,6 +3159,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   const sy1 = sy0 + sheetH;
   const area = { x0: sx0 + sidePad, y0: sy0 + headerH, x1: sx1 - sidePad, y1: sy1 - legendBand };
   const ch = { top: area.y0, legendH: legendBand + 22 * k, cols: legendCols, rows: legendRows };
+  Chart.sheetRect = { x: sx0, y: sy0, w: sheetW, h: sheetH };
 
   /* 深色底板 */
   const bg = g.createLinearGradient(0, 0, vw, vh);
@@ -3179,7 +3208,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   const visible = p => p.x > -70 && p.x < vw + 70 && p.y > -70 && p.y < vh + 70;
 
   /* --- 线路 --- */
-  const drawOrder = [...App.lines].filter(l => l.stations.length > 1)
+  const drawOrder = [...App.lines].filter(l => lineArms(l).some(a => a.stations.length > 1))
     .sort((a, b) => b.stations.length - a.stations.length);
 
   const strokePath = (pts) => {
@@ -3221,35 +3250,37 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   };
 
   for (const line of drawOrder) {
-    const pts = [];
-    for (const id of line.stations) {
-      const p = Chart.pos.get(id);
-      if (p) pts.push(px(p.x, p.y));
-    }
-    if (pts.length < 2) continue;
-    if (!pts.some(visible)) continue;
-    markInk(pts, lw / 2);
-    g.lineCap = 'round';
-    g.lineJoin = 'round';
+    for (const arm of lineArms(line)) {
+      const pts = [];
+      for (const id of arm.stations) {
+        const p = Chart.pos.get(id);
+        if (p) pts.push(px(p.x, p.y));
+      }
+      if (pts.length < 2) continue;
+      if (!pts.some(visible)) continue;
+      markInk(pts, lw / 2);
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
 
-    if (!line.enabled) {
-      g.setLineDash([7 * k, 7 * k]);
-      g.strokeStyle = 'rgba(95,110,128,0.5)';
-      g.lineWidth = Math.max(1.6, lw * 0.45);
-      strokePath(pts);
-      g.setLineDash([]);
-      continue;
-    }
+      if (!line.enabled) {
+        g.setLineDash([7 * k, 7 * k]);
+        g.strokeStyle = 'rgba(95,110,128,0.5)';
+        g.lineWidth = Math.max(1.6, lw * 0.45);
+        strokePath(pts);
+        g.setLineDash([]);
+        continue;
+      }
 
-    // 白色描边（交叉处形成过线桥）
-    if (lw > 3) {
-      g.strokeStyle = 'rgba(255,255,255,0.95)';
-      g.lineWidth = lw + 1.9 * k;
+      // 白色描边（交叉处形成过线桥）
+      if (lw > 3) {
+        g.strokeStyle = 'rgba(255,255,255,0.95)';
+        g.lineWidth = lw + 1.9 * k;
+        strokePath(pts);
+      }
+      g.strokeStyle = line.color;
+      g.lineWidth = lw;
       strokePath(pts);
     }
-    g.strokeStyle = line.color;
-    g.lineWidth = lw;
-    strokePath(pts);
   }
 
   /* --- 车站符号 --- */
@@ -3309,8 +3340,12 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
       g.fillText(line.short, x + bw / 2, y + bh / 2 + 0.5 * k);
     };
     for (const line of drawOrder) {
-      badge(line, line.stations[0], line.stations[1]);
-      badge(line, line.stations[line.stations.length - 1], line.stations[line.stations.length - 2]);
+      for (const arm of lineArms(line)) {
+        const s = arm.stations;
+        if (s.length < 2) continue;
+        badge(line, s[0], s[1]);
+        badge(line, s[s.length - 1], s[s.length - 2]);
+      }
     }
   }
 
@@ -3319,9 +3354,11 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   const items = [];
   const terminals = new Set();
   for (const line of App.lines) {
-    if (line.stations.length < 2) continue;
-    terminals.add(line.stations[0]);
-    terminals.add(line.stations[line.stations.length - 1]);
+    for (const arm of lineArms(line)) {
+      if (arm.stations.length < 2) continue;
+      terminals.add(arm.stations[0]);
+      terminals.add(arm.stations[arm.stations.length - 1]);
+    }
   }
   const showAll = cellPx > 13;
   for (const st of App.stations.values()) {
@@ -3354,35 +3391,46 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
     for (const lid of it.st.lines) {
       const ln = getLine(lid);
       if (!ln) continue;
-      const at = ln.stations.indexOf(it.st.id);
-      for (const nb of [at - 1, at + 1]) {
-        if (nb < 0 || nb >= ln.stations.length) continue;
-        const q = Chart.pos.get(ln.stations[nb]);
-        if (!q) continue;
-        along.add(Math.sign(q.i - it.cp.i) + ',' + Math.sign(q.j - it.cp.j));
+      for (const arm of lineArms(ln)) {
+        const at = arm.stations.indexOf(it.st.id);
+        if (at < 0) continue;
+        for (const nb of [at - 1, at + 1]) {
+          if (nb < 0 || nb >= arm.stations.length) continue;
+          const q = Chart.pos.get(arm.stations[nb]);
+          if (!q) continue;
+          along.add(Math.sign(q.i - it.cp.i) + ',' + Math.sign(q.j - it.cp.j));
+        }
       }
     }
     const ordered = cands.filter(c => !along.has(c[0] + ',' + c[1]))
       .concat(cands.filter(c => along.has(c[0] + ',' + c[1])));
-    for (const [dx, dy, align, base] of ordered) {
-      const x = align === 'left' ? p.x + rr : align === 'right' ? p.x - rr - tw : p.x - tw / 2;
-      const y = base === 'top' ? p.y + rr : base === 'bottom' ? p.y - rr - th : p.y - th / 2;
-      if (y < area.y0 + 4 * k || y + th > area.y1 - 4 * k) continue;
-      if (x < area.x0 - 2 * k || x + tw > area.x1 + 2 * k) continue;
-      if (!inkFree(x - 1.2 * k, y - 0.8 * k, tw + 2.4 * k, th + 1.6 * k)) continue;
-      if (!labelBox(x - 1.5 * k, y - 1 * k, tw + 3 * k, th + 2 * k)) continue;
-      g.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
-      g.textBaseline = base === 'top' ? 'top' : base === 'bottom' ? 'bottom' : 'middle';
-      const tx = align === 'left' ? x : align === 'right' ? x + tw : x + tw / 2;
-      const ty = base === 'top' ? y : base === 'bottom' ? y + th : y + th / 2;
-      if (halo) {
-        g.lineWidth = 3 * k;
-        g.strokeStyle = 'rgba(255,255,255,0.92)';
-        g.strokeText(it.st.name, tx, ty);
+
+    // 先在空白处找位置；重点站（换乘/终点）找不到时允许压线（带白色描边）
+    const passes = it.trans || it.term ? [false, true] : [false];
+    let done = false;
+    for (const allowInk of passes) {
+      if (done) break;
+      for (const [dx, dy, align, base] of ordered) {
+        const x = align === 'left' ? p.x + rr : align === 'right' ? p.x - rr - tw : p.x - tw / 2;
+        const y = base === 'top' ? p.y + rr : base === 'bottom' ? p.y - rr - th : p.y - th / 2;
+        if (y < area.y0 + 4 * k || y + th > area.y1 - 4 * k) continue;
+        if (x < area.x0 - 2 * k || x + tw > area.x1 + 2 * k) continue;
+        if (!allowInk && !inkFree(x - 1.2 * k, y - 0.8 * k, tw + 2.4 * k, th + 1.6 * k)) continue;
+        if (!labelBox(x - 1.5 * k, y - 1 * k, tw + 3 * k, th + 2 * k)) continue;
+        g.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
+        g.textBaseline = base === 'top' ? 'top' : base === 'bottom' ? 'bottom' : 'middle';
+        const tx = align === 'left' ? x : align === 'right' ? x + tw : x + tw / 2;
+        const ty = base === 'top' ? y : base === 'bottom' ? y + th : y + th / 2;
+        if (halo || allowInk) {
+          g.lineWidth = (allowInk ? 3.4 : 2.4) * k;
+          g.strokeStyle = 'rgba(255,255,255,0.96)';
+          g.strokeText(it.st.name, tx, ty);
+        }
+        g.fillStyle = it.trans ? '#0d1626' : it.term ? '#1c2734' : '#404d5f';
+        g.fillText(it.st.name, tx, ty);
+        done = true;
+        break;
       }
-      g.fillStyle = it.trans ? '#0d1626' : it.term ? '#1c2734' : '#404d5f';
-      g.fillText(it.st.name, tx, ty);
-      break;
     }
   }
 
@@ -3432,7 +3480,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   const colW = (sheetW - 68 * k - 120 * k) / ch.cols;
   let ci = 0;
   for (const line of App.lines) {
-    if (line.stations.length < 2) continue;
+    if (!lineArms(line).some(a => a.stations.length > 1)) continue;
     const col = ci % ch.cols, row = Math.floor(ci / ch.cols);
     const x = startX + col * colW, y = startY + row * 21 * k;
     g.fillStyle = line.color;
@@ -3479,9 +3527,19 @@ function chartExport() {
   c2.width = vw; c2.height = vh;
   const g2 = c2.getContext('2d');
   drawChartTo(g2, vw, vh, { x: App.cam.x, y: App.cam.y, s: App.cam.s * k }, k, 0);
+  // 只导出那张“图”，不要深色底板
+  const r = Chart.sheetRect || { x: 0, y: 0, w: vw, h: vh };
+  const x = Math.max(0, Math.round(r.x)), y = Math.max(0, Math.round(r.y));
+  const w = Math.min(vw - x, Math.round(r.w) + 4), h = Math.min(vh - y, Math.round(r.h) + 4);
+  const c3 = document.createElement('canvas');
+  c3.width = w; c3.height = h;
+  const g3 = c3.getContext('2d');
+  g3.fillStyle = '#ffffff';
+  g3.fillRect(0, 0, w, h);
+  g3.drawImage(c2, x, y, w, h, 0, 0, w, h);
   const a = document.createElement('a');
   a.download = '南京地铁线网图.png';
-  a.href = c2.toDataURL('image/png');
+  a.href = c3.toDataURL('image/png');
   a.click();
 }
 
@@ -3564,8 +3622,8 @@ el.tabs.addEventListener('click', e => {
 /* ---------------- 线网列表 ---------------- */
 function renderLineList() {
   const frag = document.createDocumentFragment();
-  const sorted = [...App.lines].sort((a, b) => (b.enabled - a.enabled) || (rankOf(a) - rankOf(b)));
-  for (const line of sorted) {
+  const cmp = (a, b) => (b.enabled - a.enabled) || (rankOf(a) - rankOf(b));
+  const makeItem = (line) => {
     const item = document.createElement('div');
     item.className = 'lineItem' + (line.id === App.selectedLine ? ' active' : '') + (!line.enabled ? ' off' : '');
     item.dataset.id = line.id;
@@ -3580,7 +3638,18 @@ function renderLineList() {
     item.addEventListener('click', () => selectLine(line.id));
     item.addEventListener('dblclick', () => { App.editingLine = line.id; setMode('edit'); renderEditSelect(); });
     frag.appendChild(item);
-  }
+  };
+  const head = (txt) => {
+    const d = document.createElement('div');
+    d.className = 'grpHead';
+    d.textContent = txt;
+    frag.appendChild(d);
+  };
+  const blds = App.lines.filter(l => BUILDING_IDS.indexOf(l.id) >= 0).sort(cmp);
+  const ops = App.lines.filter(l => BUILDING_IDS.indexOf(l.id) < 0).sort(cmp);
+  if (blds.length) { head(`在建 · CONSTRUCTING ${blds.length}`); blds.forEach(makeItem); }
+  head(`运营 · IN SERVICE ${ops.length}`);
+  ops.forEach(makeItem);
   el.lineList.innerHTML = '';
   el.lineList.appendChild(frag);
   const ns = networkStats();
@@ -3667,6 +3736,14 @@ function buildSeq(box, hint, line) {
       const x = row.querySelector('.x');
       if (x) x.addEventListener('click', e => { e.stopPropagation(); detachStation(line.id, sid, ai); });
       frag.appendChild(row);
+      if (ai === 0 && i >= 1 && i <= arm.stations.length - 3) {
+        const sp = document.createElement('div');
+        sp.className = 'seqSplit';
+        sp.innerHTML = '<span>✂ 在此断开</span>';
+        sp.title = '把这条线从此处拆成两条独立线路';
+        sp.addEventListener('click', e => { e.stopPropagation(); openSplitDialog(line.id, i + 1); });
+        frag.appendChild(sp);
+      }
     });
   });
   box.appendChild(frag);
@@ -3770,6 +3847,7 @@ function snapshot() {
     })),
     spent: App.spent, newStations: App.newStations, customStations: App.customStations,
     trackOff: { ...(App.trackOff || {}) },
+    trackOV: { ...TRACK_OV },
     selected: App.selectedLine, editing: App.editingLine, drawAnchor: App.drawAnchor ? { ...App.drawAnchor } : null
   };
 }
@@ -3787,6 +3865,8 @@ function restore(snap) {
   });
   App.spent = snap.spent; App.newStations = snap.newStations; App.customStations = snap.customStations;
   App.trackOff = { ...(snap.trackOff || {}) };
+  trackResetAll();
+  Object.assign(TRACK_OV, snap.trackOV || {});
   App.drawAnchor = snap.drawAnchor ? { ...snap.drawAnchor } : null;
   App.selectedLine = snap.selected; App.editingLine = snap.editing;
   invalidatePools(); refreshSegs(); rebuildGraph();
@@ -3835,6 +3915,7 @@ el.editLineSel.addEventListener('change', () => {
 });
 
 $('btnToolStation').addEventListener('click', () => setTool('station'));
+$('btnToolSplit').addEventListener('click', () => openSplitPick());
 $('btnToolDraw').addEventListener('click', () => setTool('draw'));
 $('btnToolDrag').addEventListener('click', () => setTool('drag'));
 $('btnToolErase').addEventListener('click', () => setTool('erase'));
@@ -3949,6 +4030,112 @@ function blankNewStation(lng, lat) {
       toast(`${name} 已建成，进入站网${App.editingLine ? '（用画线接入线路）' : ''}`);
     });
     input.addEventListener('keydown', e => { if (e.key === 'Enter') root.querySelector('[data-act=ok]').click(); });
+  });
+}
+
+
+/* ---------------- 线路拆分弹窗 ---------------- */
+function openSplitDialog(lineId, cutIdx) {
+  const line = getLine(lineId);
+  if (!line) return;
+  const main = lineArms(line)[0];
+  if (cutIdx < 2 || cutIdx > main.stations.length - 2) {
+    toast('断点太靠端：两段都要至少 2 站');
+    return;
+  }
+  const a = App.stations.get(main.stations[cutIdx - 1]);
+  const b = App.stations.get(main.stations[cutIdx]);
+  const headN = cutIdx, tailN = main.stations.length - cutIdx;
+  const palette = [line.color, '#8AB4F8', '#EF426F', '#FA4616', '#009ACE', '#FF8000', '#4A7729', '#7D55C7'];
+  openDialog(`<h3>拆分线路 · ${line.name}</h3>
+    <p>在 <b>${a ? a.name : '?'}</b> 与 <b>${b ? b.name : '?'}</b> 之间断开。
+    前半段 <b>${headN}</b> 站仍叫「${line.name}」，后半段 <b>${tailN}</b> 站独立成新线。</p>
+    <div style="display:flex;align-items:center;gap:8px;margin:12px 0 10px">
+      <span style="font-size:11.5px;color:#9db4d1;flex:0 0 52px">新线名称</span>
+      <input id="spName" value="${line.name}·新段" style="flex:1;min-width:0;background:#101d30;
+        border:1px solid rgba(120,180,255,.3);border-radius:6px;color:#dce8f7;padding:6px 8px;font-size:12px" />
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
+      <span style="font-size:11.5px;color:#9db4d1;flex:0 0 52px">新线颜色</span>
+      <div id="spSw" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+    </div>
+    <p style="color:#8ba3c4;font-size:11.5px;margin-top:10px">拆分属于运营调整，不产生建设费用。
+    断点处真实轨道几何会被裁成两段，两段各自沿原位延伸。</p>
+    <div class="dialogFoot">
+      <button class="btn ghost" data-act="cancel">取消</button>
+      <button class="btn" data-act="ok">确认拆分</button>
+    </div>`, root => {
+    let color = '#8AB4F8';
+    const sw = root.querySelector('#spSw');
+    palette.forEach((c, i) => {
+      const d = document.createElement('div');
+      d.style.cssText = 'width:22px;height:22px;border-radius:6px;background:' + c +
+        ';cursor:pointer;border:2px solid ' + (i === 1 ? '#dce8f7' : 'transparent') + ';box-sizing:border-box';
+      if (i === 1) color = c;
+      d.title = c;
+      d.addEventListener('click', () => {
+        color = c;
+        Array.from(sw.children).forEach(x => { x.style.borderColor = 'transparent'; });
+        d.style.borderColor = '#dce8f7';
+      });
+      sw.appendChild(d);
+    });
+    root.querySelector('[data-act=ok]').addEventListener('click', () => {
+      const nm = (root.querySelector('#spName').value || '').trim() || (line.name + '·新段');
+      const r = splitLine(lineId, cutIdx, { name: nm, color });
+      closeDialog();
+      if (!r.ok) { toast('拆分失败：' + r.reason); return; }
+      renderLineList(); renderDetail(); renderEditSelect(); syncBudget(); updateNetStat();
+      App.dirty = true;
+      toast(`已拆分：${line.name} ${r.head} 站 + ${r.line.name} ${r.tail} 站`);
+    });
+  });
+}
+
+
+/* 「✂ 拆分线路」：先选线路与断点，再进入拆分确认 */
+function openSplitPick() {
+  const usable = App.lines.filter(l => lineArms(l)[0].stations.length >= 4);
+  if (!usable.length) { toast('没有可拆分的线路（至少要 4 站）'); return; }
+  const curId = (App.editingLine && usable.some(l => l.id === App.editingLine)) ? App.editingLine : usable[0].id;
+  const opts = usable.map(l => `<option value="${l.id}"${l.id === curId ? ' selected' : ''}>${l.name}（${l.stations.length} 站）</option>`).join('');
+  const cutHtml = lid => {
+    const line = getLine(lid);
+    if (!line) return '';
+    const main = lineArms(line)[0], n = main.stations.length;
+    let out = '';
+    for (let i = 2; i <= n - 2; i++) {
+      const a = App.stations.get(main.stations[i - 1]), b = App.stations.get(main.stations[i]);
+      out += `<option value="${i}">${a ? a.name : '?'} → ${b ? b.name : '?'}（前 ${i} 站 / 后 ${n - i} 站）</option>`;
+    }
+    return out;
+  };
+  openDialog(`<h3>拆分线路</h3>
+    <p>选一条线和断点，把它拆成两条独立运营的线路，类似广州 2 号线 / 8 号线拆分。</p>
+    <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
+      <span style="font-size:11.5px;color:#9db4d1;flex:0 0 52px">线路</span>
+      <select id="spLine" style="flex:1;min-width:0;background:#101d30;border:1px solid rgba(120,180,255,.3);
+        border-radius:6px;color:#dce8f7;padding:6px 8px;font-size:12px">${opts}</select>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
+      <span style="font-size:11.5px;color:#9db4d1;flex:0 0 52px">断点</span>
+      <select id="spCut" style="flex:1;min-width:0;background:#101d30;border:1px solid rgba(120,180,255,.3);
+        border-radius:6px;color:#dce8f7;padding:6px 8px;font-size:12px">${cutHtml(curId)}</select>
+    </div>
+    <p style="color:#8ba3c4;font-size:11.5px">拆分不产生建设费用，断点处的轨道几何按两段裁切。</p>
+    <div class="dialogFoot">
+      <button class="btn ghost" data-act="cancel">取消</button>
+      <button class="btn" data-act="next">下一步</button>
+    </div>`, root => {
+    root.querySelector('#spLine').addEventListener('change', e => {
+      root.querySelector('#spCut').innerHTML = cutHtml(e.target.value);
+    });
+    root.querySelector('[data-act=next]').addEventListener('click', () => {
+      const lid = root.querySelector('#spLine').value;
+      const cut = +root.querySelector('#spCut').value;
+      closeDialog();
+      openSplitDialog(lid, cut);
+    });
   });
 }
 
@@ -4069,14 +4256,16 @@ function handleClick(x, y) {
       }
       const anchor = App.drawAnchor && App.drawAnchor.sid != null ? App.drawAnchor : null;
       const anchorName = anchor ? (App.stations.get(anchor.sid) || {}).name : null;
+      const wasOff = !!(App.trackOff && App.trackOff[line.id]);
       if (anchor) {
         pushUndo();
         const r = lineAttach(line, anchor.sid, hit);
         if (!r || !r.ok) { toast('接入失败'); return; }
         App.drawAnchor = { sid: hit, arm: r.arm };
+        const note = (!wasOff && App.trackOff[line.id]) ? '；主干起终点已外扩，该线改用车站连线绘制' : '';
         toast(r.mode === 'branch'
           ? `已从「${anchorName}」分叉出新支线，接入「${name}」（${line.name} 现 ${uniqueCount(line)} 站 / ${lineArms(line).length} 臂）`
-          : `已接入「${name}」（${line.name} 现 ${uniqueCount(line)} 站）`);
+          : `已接入「${name}」（${line.name} 现 ${uniqueCount(line)} 站）${note}`);
       } else {
         pushUndo();
         const main = arms[0].stations;
@@ -4572,7 +4761,7 @@ function init() {
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if (el.modal.classList.contains('show')) { closeDialog(); return; }
-      if (App.editingLine && App.mode === 'edit') { App.editingLine = null; renderEditSelect(); toast('已结束画线'); }
+      if (App.editingLine && App.mode === 'edit') { App.editingLine = null; App.drawAnchor = null; renderEditSelect(); toast('已结束画线'); }
     }
     if (e.key === ' ' && App.sim) {
       e.preventDefault();

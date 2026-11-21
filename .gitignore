@@ -9,9 +9,14 @@
 /_preview.html
 /_preview.svg
 /bus_lines_index.json
+/bus_data.json
+/bus_groups.json
 /bus_stops_all.json
 /bus_stops_p1.json
 /bus_stops_raw.json
+/osm_stops.json
+/南京公交模拟器.html
+/南京公交查询.html
 /f1.png
 /f2.png
 /f3.png
