@@ -1,6 +1,9 @@
 /_chart_test.html
 /_geo_cache.json
+/_geo_nom.json
+/_geo_osm.json
 /_geo.log
+/_missing_names.json
 /_missing_stops.txt
 /_p.html
 /_p1.html
@@ -8,12 +11,14 @@
 /_p2.svg
 /_preview.html
 /_preview.svg
+/amap_routes.json
 /bus_lines_index.json
 /bus_data.json
 /bus_groups.json
 /bus_stops_all.json
 /bus_stops_p1.json
 /bus_stops_raw.json
+/osm_routes.json
 /osm_stops.json
 /南京公交模拟器.html
 /南京公交查询.html

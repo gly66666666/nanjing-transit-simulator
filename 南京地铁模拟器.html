@@ -44,6 +44,8 @@ header::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px
   border-radius:50%;background:#fff}
 .brand h1{font-size:17px;font-weight:650;letter-spacing:.5px;white-space:nowrap}
 .brand span{font-size:10px;color:var(--dim);letter-spacing:2px;display:block;margin-top:1px}
+.city-home{color:var(--muted);font-size:12px;text-decoration:none;white-space:nowrap}
+.city-home:hover,.city-home:focus-visible{color:var(--text);text-decoration:underline}
 .tabs{display:flex;gap:4px;background:rgba(255,255,255,.035);padding:4px;border-radius:10px;border:1px solid var(--stroke)}
 .tabs button{
   appearance:none;border:0;background:transparent;color:var(--muted);font-family:var(--sans);
@@ -251,6 +253,8 @@ footer{height:42px;flex:0 0 42px;display:flex;align-items:center;gap:12px;paddin
 .eventLog{flex:0 0 300px;font-family:var(--mono);font-size:10.5px;color:var(--muted);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .eventLog b{color:var(--warn)}
+.map-credit{flex:0 0 auto;color:var(--muted);white-space:nowrap}
+.map-credit a{color:inherit}
 
 /* 弹窗 */
 .modal{position:fixed;inset:0;z-index:60;display:none;place-items:center;background:rgba(3,7,14,.7);backdrop-filter:blur(6px)}
@@ -338,6 +342,7 @@ body.mode-chart .chartTools{display:flex}
         <span>NANJING METRO LAB</span>
       </div>
     </div>
+    <a class="city-home" href="./index.html">← 城市列表</a>
     <nav class="tabs" id="tabs">
       <button data-mode="view" class="active">线网</button>
       <button data-mode="edit">规划</button>
@@ -521,6 +526,7 @@ body.mode-chart .chartTools{display:flex}
       <div class="tlMark" id="tlMark" style="left:2.5%"></div>
     </div>
     <div class="eventLog" id="eventLog">系统就绪</div>
+    <div class="map-credit"><a href="https://www.openstreetmap.org/copyright">© OpenStreetMap 贡献者</a></div>
   </footer>
 </div>
 
