@@ -1,0 +1,434 @@
+[
+ {
+  "file": "上海地铁模拟器.html",
+  "core": "old",
+  "css": "old.css",
+  "old": 211538,
+  "new": 55715,
+  "data": 46288
+ },
+ {
+  "file": "东莞地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 280149,
+  "new": 112585,
+  "data": 102353
+ },
+ {
+  "file": "乌鲁木齐地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 191288,
+  "new": 23724,
+  "data": 13488
+ },
+ {
+  "file": "佛山地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 330245,
+  "new": 162681,
+  "data": 152451
+ },
+ {
+  "file": "兰州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 188787,
+  "new": 21223,
+  "data": 10992
+ },
+ {
+  "file": "北京地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 514898,
+  "new": 347334,
+  "data": 337103
+ },
+ {
+  "file": "南京地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 231834,
+  "new": 64337,
+  "data": 54443
+ },
+ {
+  "file": "南宁地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 218353,
+  "new": 50789,
+  "data": 40558
+ },
+ {
+  "file": "南昌地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 224819,
+  "new": 57255,
+  "data": 47023
+ },
+ {
+  "file": "南通地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 198802,
+  "new": 31238,
+  "data": 21008
+ },
+ {
+  "file": "厦门地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 226388,
+  "new": 58824,
+  "data": 48594
+ },
+ {
+  "file": "台州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 180368,
+  "new": 12804,
+  "data": 2573
+ },
+ {
+  "file": "合肥地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 299185,
+  "new": 131621,
+  "data": 121392
+ },
+ {
+  "file": "呼和浩特地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 192123,
+  "new": 24559,
+  "data": 14323
+ },
+ {
+  "file": "哈尔滨地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 183844,
+  "new": 16280,
+  "data": 6322
+ },
+ {
+  "file": "大湾区地铁总图.html",
+  "core": "gba",
+  "css": "six.css",
+  "old": 2100115,
+  "new": 1931537,
+  "data": 1921975
+ },
+ {
+  "file": "大连地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 324695,
+  "new": 157131,
+  "data": 146901
+ },
+ {
+  "file": "大长三角地铁模拟器.html",
+  "core": "bigcsj",
+  "css": "bigcsj.css",
+  "old": 995799,
+  "new": 806933,
+  "data": 796902
+ },
+ {
+  "file": "天津地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 319409,
+  "new": 151845,
+  "data": 141614
+ },
+ {
+  "file": "太原地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 192108,
+  "new": 24544,
+  "data": 14313
+ },
+ {
+  "file": "宁波地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 276169,
+  "new": 108605,
+  "data": 98375
+ },
+ {
+  "file": "常州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 201534,
+  "new": 33970,
+  "data": 23734
+ },
+ {
+  "file": "广东城际地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 257220,
+  "new": 88815,
+  "data": 78861
+ },
+ {
+  "file": "广州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 1021640,
+  "new": 853757,
+  "data": 843524
+ },
+ {
+  "file": "徐州地铁模拟器.html",
+  "core": "old",
+  "css": "old.css",
+  "old": 192897,
+  "new": 36860,
+  "data": 27435
+ },
+ {
+  "file": "成都地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 470397,
+  "new": 302833,
+  "data": 292602
+ },
+ {
+  "file": "无锡地铁模拟器.html",
+  "core": "old",
+  "css": "old.css",
+  "old": 206007,
+  "new": 47540,
+  "data": 38070
+ },
+ {
+  "file": "昆明地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 247261,
+  "new": 79697,
+  "data": 69466
+ },
+ {
+  "file": "杭州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 529350,
+  "new": 361786,
+  "data": 351554
+ },
+ {
+  "file": "杭绍甬三城地铁模拟器.html",
+  "core": "six",
+  "css": "six.css",
+  "old": 633956,
+  "new": 467472,
+  "data": 457910
+ },
+ {
+  "file": "杭绍甬城际地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 240606,
+  "new": 73042,
+  "data": 62796
+ },
+ {
+  "file": "武汉地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 468920,
+  "new": 301356,
+  "data": 291127
+ },
+ {
+  "file": "沈阳地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 264801,
+  "new": 97237,
+  "data": 87005
+ },
+ {
+  "file": "洛阳地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 191104,
+  "new": 23540,
+  "data": 13309
+ },
+ {
+  "file": "济南地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 244123,
+  "new": 76559,
+  "data": 66330
+ },
+ {
+  "file": "深圳地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 505127,
+  "new": 337563,
+  "data": 327331
+ },
+ {
+  "file": "温州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 274696,
+  "new": 107132,
+  "data": 96901
+ },
+ {
+  "file": "澳门地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 198154,
+  "new": 30590,
+  "data": 20361
+ },
+ {
+  "file": "石家庄地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 196185,
+  "new": 28621,
+  "data": 18382
+ },
+ {
+  "file": "福州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 250080,
+  "new": 82516,
+  "data": 72286
+ },
+ {
+  "file": "绍兴地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 209727,
+  "new": 42163,
+  "data": 31931
+ },
+ {
+  "file": "芜湖地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 205973,
+  "new": 38409,
+  "data": 28181
+ },
+ {
+  "file": "苏州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 194913,
+  "new": 27349,
+  "data": 17384
+ },
+ {
+  "file": "西安地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 262997,
+  "new": 95433,
+  "data": 85205
+ },
+ {
+  "file": "贵阳地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 211707,
+  "new": 44143,
+  "data": 33912
+ },
+ {
+  "file": "郑州地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 285391,
+  "new": 117827,
+  "data": 107594
+ },
+ {
+  "file": "重庆地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 530921,
+  "new": 363357,
+  "data": 353124
+ },
+ {
+  "file": "金华地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 229632,
+  "new": 62068,
+  "data": 51838
+ },
+ {
+  "file": "长三角六城地铁模拟器.html",
+  "core": "six",
+  "css": "six.css",
+  "old": 388708,
+  "new": 222224,
+  "data": 212665
+ },
+ {
+  "file": "长三角地铁模拟器.html",
+  "core": "csj",
+  "css": "csj.css",
+  "old": 937736,
+  "new": 750319,
+  "data": 740353
+ },
+ {
+  "file": "长春地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 241287,
+  "new": 73723,
+  "data": 63490
+ },
+ {
+  "file": "长沙地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 285415,
+  "new": 117851,
+  "data": 107619
+ },
+ {
+  "file": "青岛地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 307321,
+  "new": 139757,
+  "data": 129526
+ },
+ {
+  "file": "香港地铁模拟器.html",
+  "core": "city",
+  "css": "city.css",
+  "old": 592159,
+  "new": 424595,
+  "data": 414362
+ }
+]
