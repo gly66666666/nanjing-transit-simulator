@@ -131,8 +131,10 @@ function mainMatchesDef(line) {
 function refreshSegs() {
   for (const line of App.lines) {
     const arms = lineArms(line);
+    const definition = LINE_DEFS.find(def => def.id === line.id);
     let km = 0;
-    for (const arm of arms) {
+    for (const [index, arm] of arms.entries()) {
+      arm.planned = MetroMap.isPlannedArm(arm.stations, definition, index);
       const segs = [];
       let total = 0;
       for (let i = 0; i < arm.stations.length - 1; i++) {
@@ -1178,17 +1180,18 @@ function cornerPath(pts, rMax) {
 
 /* ---------- 背景 ---------- */
 function drawBackground() {
+  const colors = MetroMap.palette();
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#07101f');
-  g.addColorStop(0.55, '#081424');
-  g.addColorStop(1, '#060d19');
+  g.addColorStop(0, colors.ground[0]);
+  g.addColorStop(0.55, colors.ground[1]);
+  g.addColorStop(1, colors.ground[2]);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 
   // 网格（5km）
   const step = 5;
   ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(84,132,196,0.07)';
+  ctx.strokeStyle = colors.grid;
   const x0 = Math.floor((App.cam.x - W / 2 / App.cam.s) / step) * step;
   const x1 = App.cam.x + W / 2 / App.cam.s;
   const y0 = Math.floor((App.cam.y - H / 2 / App.cam.s) / step) * step;
@@ -1216,7 +1219,7 @@ function drawBackground() {
       if (p.x < 20 || p.x > W - 20 || p.y < 20 || p.y > H - 20) continue;
       ctx.font = '600 13px "Microsoft YaHei","Segoe UI"';
       ctx.textAlign = 'center';
-      ctx.fillStyle = 'rgba(122,164,206,0.26)';
+      ctx.fillStyle = colors.region;
       ctx.fillText(name, p.x, p.y);
     }
     ctx.textAlign = 'left';
@@ -1253,8 +1256,8 @@ function drawBackground() {
     const rx = hh.rx * KX * App.cam.s, ry = hh.ry * KY * App.cam.s;
     if (c.x + rx < 0 || c.x - rx > W || c.y + ry < 0 || c.y - ry > H) continue;
     const rg = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, Math.max(rx, ry));
-    rg.addColorStop(0, 'rgba(36,84,52,0.42)');
-    rg.addColorStop(1, 'rgba(30,66,48,0)');
+    rg.addColorStop(0, colors.hill);
+    rg.addColorStop(1, colors.hillEnd);
     ctx.fillStyle = rg;
     ctx.save(); ctx.translate(c.x, c.y); ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
     ctx.beginPath(); ctx.arc(0, 0, Math.max(rx, ry), 0, Math.PI * 2); ctx.fill();
@@ -1265,8 +1268,8 @@ function drawBackground() {
   for (const lk of GEO.lakes) {
     const c = w2s((lk.x - LNG0) * KX, (LAT0 - lk.y) * KY);
     const rx = lk.rx * KX * App.cam.s, ry = lk.ry * KY * App.cam.s;
-    ctx.fillStyle = 'rgba(28,74,102,0.5)';
-    ctx.strokeStyle = 'rgba(70,140,180,0.28)';
+    ctx.fillStyle = colors.lake;
+    ctx.strokeStyle = colors.lakeEdge;
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2);
     ctx.fill(); ctx.stroke();
@@ -1276,11 +1279,11 @@ function drawBackground() {
   const pts = GEO.river.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
   const rw = Math.max(5, GEO.riverW * App.cam.s);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.strokeStyle = 'rgba(10,26,42,0.9)'; ctx.lineWidth = rw + Math.max(3, rw * 0.3);
+  ctx.strokeStyle = colors.riverBank; ctx.lineWidth = rw + Math.max(3, rw * 0.3);
   smoothPath(pts); ctx.stroke();
-  ctx.strokeStyle = 'rgba(21,52,78,0.92)'; ctx.lineWidth = rw;
+  ctx.strokeStyle = colors.river; ctx.lineWidth = rw;
   smoothPath(pts); ctx.stroke();
-  ctx.strokeStyle = 'rgba(58,116,158,0.12)'; ctx.lineWidth = Math.max(2, rw * 0.3);
+  ctx.strokeStyle = colors.riverCenter; ctx.lineWidth = Math.max(2, rw * 0.3);
   smoothPath(pts); ctx.stroke();
 
   // 大河字样（默认南京长江，可用 GEO.riverLabel 覆写）
@@ -1290,7 +1293,7 @@ function drawBackground() {
     ctx.save();
     ctx.translate(p.x, p.y); ctx.rotate(rl.rot);
     ctx.font = '600 14px "Microsoft YaHei","Segoe UI"';
-    ctx.fillStyle = 'rgba(132,190,230,0.34)';
+    ctx.fillStyle = colors.riverName;
     ctx.fillText(rl.text, 0, 0);
     ctx.restore();
   }
@@ -1298,6 +1301,7 @@ function drawBackground() {
 
 /* ---------- 线路 ---------- */
 function drawLines() {
+  const colors = MetroMap.palette();
   const lw = Math.max(3.0, Math.min(8.6, App.cam.s * 0.215));
   for (const line of App.lines) {
     const arms = lineArms(line);
@@ -1317,11 +1321,14 @@ function drawLines() {
         const st = App.stations.get(id);
         return st ? w2s(st.x, st.y) : null;
       }).filter(Boolean);
-      if (pts.length >= 2) paths.push({ pts, tk: false });
+      if (pts.length >= 2) paths.push({ pts, planned: arm.planned });
     }
     const rMax = Math.max(2.5, Math.min(13, lw * 3.4));
-    const paint = (o) => { if (o.tk) smoothPath(o.pts); else cornerPath(o.pts, rMax); };
-    const paintPts = (pts) => cornerPath(pts, rMax);
+    const paint = ({ pts, tk, planned }) => {
+      if (tk) smoothPath(pts);
+      else if (planned) MetroMap.tracePlannedPath(ctx, pts);
+      else cornerPath(pts, rMax);
+    };
     const sel = line.id === App.selectedLine || line.id === App.editingLine;
     const on = line.enabled;
     // 在建线路画虚线，与运营线（含同为橙色系的 S4/S8）区分开
@@ -1330,14 +1337,14 @@ function drawLines() {
     // 延伸段（如苏州 2 号线北延）在建：用同色虚线覆盖该段
     const bldSegs = [];
     if (line.bldHead || line.bldTail) {
-      const st = line.stations;
-      const ptsOf = (arr) => arr.map(id => {
-        const s = App.stations.get(id);
-        return s ? w2s(s.x, s.y) : null;
-      }).filter(Boolean);
-      if (line.bldHead) bldSegs.push(ptsOf(st.slice(0, line.bldHead + 1)));
-      if (line.bldTail) bldSegs.push(ptsOf(st.slice(st.length - line.bldTail - 1)));
+      const points = line.stations.map(id => App.stations.get(id)).filter(Boolean).map(st => w2s(st.x, st.y));
+      if (line.bldHead) bldSegs.push([points, 0, Math.min(line.bldHead, points.length - 1)]);
+      if (line.bldTail) bldSegs.push([points, Math.max(0, points.length - line.bldTail - 1), points.length - 1]);
     }
+    const paintBuilt = ([points, first, last]) => {
+      if (arms[0].planned) MetroMap.tracePlannedPath(ctx, points, first, last);
+      else cornerPath(points.slice(first, last + 1), rMax);
+    };
     const luma = (hex) => {
       const h = hex.replace('#', '');
       const r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
@@ -1347,7 +1354,7 @@ function drawLines() {
 
     // 外描边（暗色线用浅边、浅色线用深边，保证深底可读）
     ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
-    ctx.strokeStyle = lightLine ? 'rgba(6,14,26,0.80)' : 'rgba(206,226,248,0.22)';
+    ctx.strokeStyle = lightLine ? colors.lightLineEdge : colors.darkLineEdge;
     ctx.lineWidth = lightLine ? lw + 3.8 : lw + 3.2;
     if (dash) ctx.setLineDash(dash);
     for (const o of paths) { paint(o); ctx.stroke(); }
@@ -1389,17 +1396,17 @@ function drawLines() {
     if (bldSegs.length) {
       ctx.lineCap = 'butt';
       ctx.setLineDash([]);
-      ctx.strokeStyle = 'rgba(6,13,24,0.96)';
+      ctx.strokeStyle = colors.constructionGap;
       ctx.lineWidth = lw + 4.6;
-      for (const pts of bldSegs) { paintPts(pts); ctx.stroke(); }
+      for (const segment of bldSegs) { paintBuilt(segment); ctx.stroke(); }
       const d2 = [lw * 2.2, lw * 1.7];
       ctx.setLineDash(d2);
-      ctx.strokeStyle = lightLine ? 'rgba(6,14,26,0.72)' : 'rgba(206,226,248,0.22)';
+      ctx.strokeStyle = lightLine ? colors.lightLineEdge : colors.darkLineEdge;
       ctx.lineWidth = lw + 3.2;
-      for (const pts of bldSegs) { paintPts(pts); ctx.stroke(); }
+      for (const segment of bldSegs) { paintBuilt(segment); ctx.stroke(); }
       ctx.strokeStyle = line.color;
       ctx.lineWidth = lw;
-      for (const pts of bldSegs) { paintPts(pts); ctx.stroke(); }
+      for (const segment of bldSegs) { paintBuilt(segment); ctx.stroke(); }
       ctx.setLineDash([]);
     }
     ctx.lineCap = 'round';
@@ -1408,6 +1415,7 @@ function drawLines() {
 
 /* ---------- 底图上的换乘/普通站 ---------- */
 function drawStations() {
+  const colors = MetroMap.palette();
   const sim = App.sim;
   const s = App.cam.s;
   const termSet = terminalSet();
@@ -1439,19 +1447,19 @@ function drawStations() {
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
     if (st.lines.length === 0) {
       // 站网里的孤立车站：空心环，表示尚未被任何线路使用
-      ctx.fillStyle = 'rgba(150,185,225,0.10)';
+      ctx.fillStyle = colors.orphan;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(160,195,232,0.9)';
+      ctx.strokeStyle = colors.orphanEdge;
       ctx.lineWidth = 1.4;
       ctx.stroke();
     } else if (isTrans) {
       const xf = (typeof XFER !== 'undefined') ? XFER[st.name] : undefined;
       const xcol = (xf && typeof XFER_TYPES !== 'undefined' && XFER_TYPES[xf.t]) ? XFER_TYPES[xf.t].color : '#8aa6c4';
-      ctx.fillStyle = '#f2f8ff';
+      ctx.fillStyle = colors.transferRing;
       ctx.fill();
       ctx.beginPath();
       ctx.arc(p.x, p.y, r * 0.46, 0, Math.PI * 2);
-      ctx.fillStyle = '#0b1524';
+      ctx.fillStyle = colors.transferCenter;
       ctx.fill();
       // 换乘方式标记环：外圈按方式着色（虚拟换乘用虚线）
       ctx.save();
@@ -1468,21 +1476,21 @@ function drawStations() {
         ctx.beginPath(); ctx.moveTo(p.x + r + 4.2, p.y); ctx.lineTo(p.x + r + 1.4, p.y + 2.6); ctx.stroke();
       }
       ctx.restore();
-      ctx.strokeStyle = 'rgba(10,20,35,0.65)';
+      ctx.strokeStyle = colors.transferEdge;
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
     } else {
-      ctx.fillStyle = '#dfe9f8';
+      ctx.fillStyle = colors.station;
       ctx.fill();
     }
 
     if (st.custom) {
-      ctx.strokeStyle = '#28d7c0'; ctx.lineWidth = 1.4;
+      ctx.strokeStyle = colors.editAccent; ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.arc(p.x, p.y, r + 2.5, 0, Math.PI * 2); ctx.stroke();
     }
     // 线路端点（首站 / 末站）：外加一圈白色细环，与中途站区分
     if (termSet.has(id) && st.lines.length > 0) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.62)';
+      ctx.strokeStyle = colors.terminalRing;
       ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.arc(p.x, p.y, r + 2.6, 0, Math.PI * 2); ctx.stroke();
     }
@@ -1520,14 +1528,16 @@ function drawTrains() {
     if (!A || !B) continue;
     const from = tr.dir === 0 ? A : B, to = tr.dir === 0 ? B : A;
     const prog = Math.max(0, Math.min(1, tr.prog));
-    const px = from.x + (to.x - from.x) * prog;
-    const py = from.y + (to.y - from.y) * prog;
-    const p = w2s(px, py);
+    const pose = arm.planned ? MetroMap.trainPose(App.stations, sts, i, prog, tr.dir !== 0) : {
+      x: from.x + (to.x - from.x) * prog,
+      y: from.y + (to.y - from.y) * prog,
+      angle: Math.atan2(to.y - from.y, to.x - from.x),
+    };
+    const p = w2s(pose.x, pose.y);
     if (p.x < -30 || p.x > W + 30 || p.y < -30 || p.y > H + 30) continue;
-    const ang = Math.atan2((to.y - from.y), (to.x - from.x));
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.rotate(ang);
+    ctx.rotate(pose.angle);
     const loadRate = line.capEff ? tr.load / line.capEff : 0;
     const col = loadRate > 0.95 ? '#ff6b7f' : loadRate > 0.7 ? '#ffc061' : '#ffffff';
     ctx.fillStyle = col;
@@ -1568,6 +1578,7 @@ function terminalSet() {
 }
 
 function drawLabels() {
+  const colors = MetroMap.palette();
   labelBoxes.length = 0;
   const s = App.cam.s;
   if (s < 4.2) return;
@@ -1618,9 +1629,9 @@ function drawLabels() {
       const x0 = al === 'left' ? tx : al === 'right' ? tx - tw : tx - tw / 2;
       if (!placeLabel(x0 - 4, ty - font * 0.8, tw + 8, font * 1.62, term ? 1 : 0)) continue;
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(5,10,18,0.88)';
+      ctx.strokeStyle = colors.labelHalo;
       ctx.strokeText(st.name, tx, ty);
-      ctx.fillStyle = term ? '#ffffff' : trans ? '#eaf3ff' : 'rgba(190,208,230,0.78)';
+      ctx.fillStyle = term ? colors.labelTerminal : trans ? colors.labelTransfer : colors.label;
       ctx.fillText(st.name, tx, ty);
       break;
     }
@@ -1630,6 +1641,7 @@ function drawLabels() {
 
 /* ---------- 编辑层 ---------- */
 function drawEditOverlay() {
+  const colors = MetroMap.palette();
   if (App.mode !== 'edit') return;
   const el = App.editingLine ? getLine(App.editingLine) : null;
   let anchorSid = App.drawAnchor && App.drawAnchor.sid != null ? App.drawAnchor.sid : null;
@@ -1645,22 +1657,27 @@ function drawEditOverlay() {
     const r0 = 8 + Math.sin((App.tick || 0) * 0.9) * 2;
     ctx.save();
     ctx.beginPath(); ctx.arc(p.x, p.y, r0, 0, Math.PI * 2);
-    ctx.strokeStyle = '#28d7c0'; ctx.lineWidth = 2.4; ctx.stroke();
+    ctx.strokeStyle = colors.editAccent; ctx.lineWidth = 2.4; ctx.stroke();
     ctx.beginPath(); ctx.arc(p.x, p.y, r0 + 6, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(40,215,192,0.35)'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.strokeStyle = colors.editHalo; ctx.lineWidth = 1.4; ctx.stroke();
     ctx.restore();
     if (mouse.inside) {
       const mp = { x: mouse.x, y: mouse.y };
       ctx.save();
       ctx.setLineDash([7, 6]);
-      ctx.strokeStyle = (el ? el.color : '#28d7c0') + 'cc';
+      ctx.strokeStyle = (el ? el.color : colors.editAccent) + 'cc';
       ctx.lineWidth = 2.2;
-      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(mp.x, mp.y); ctx.stroke();
+      const route = el && lineArms(el).find(arm => arm.stations.includes(anchorSid))?.stations;
+      const previous = route?.[0] === anchorSid ? route[1] : route?.at(-1) === anchorSid ? route.at(-2) : null;
+      const st = previous && App.stations.get(previous);
+      if (st) MetroMap.tracePlannedPath(ctx, [w2s(st.x, st.y), p, mp], 1);
+      else MetroMap.tracePlannedPath(ctx, [p, mp]);
+      ctx.stroke();
       ctx.restore();
       // 幽灵站点
       ctx.beginPath();
       ctx.arc(mp.x, mp.y, 5, 0, Math.PI * 2);
-      ctx.strokeStyle = '#28d7c0'; ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.strokeStyle = colors.editAccent; ctx.lineWidth = 1.6; ctx.stroke();
     }
   }
   if (App.tool === 'drag' && App.dragStation) {
@@ -1668,7 +1685,7 @@ function drawEditOverlay() {
     if (st) {
       const p = w2s(st.x, st.y);
       ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI * 2);
-      ctx.strokeStyle = '#28d7c0'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = colors.editAccent; ctx.lineWidth = 2; ctx.stroke();
     }
   }
 }
@@ -1690,7 +1707,7 @@ function draw() {
   if (App.sim && !App.sim.running) {
     const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.42, W / 2, H / 2, Math.max(W, H) * 0.72);
     vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,0.32)');
+    vg.addColorStop(1, MetroMap.palette().finishedShade);
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, W, H);
   }
@@ -2130,6 +2147,7 @@ function roundRectPath(g, x, y, w, h, r) {
 }
 
 function drawChartTo(g, vw, vh, cam, k, uiInset) {
+  const colors = MetroMap.palette();
   const s = cam.s;
   const px = (wx, wy) => ({ x: (wx - cam.x) * s + vw / 2, y: (wy - cam.y) * s + vh / 2 });
   const boxes = [];
@@ -2172,9 +2190,9 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
 
   /* 深色底板 */
   const bg = g.createLinearGradient(0, 0, vw, vh);
-  bg.addColorStop(0, '#080f1b');
-  bg.addColorStop(0.55, '#0c1626');
-  bg.addColorStop(1, '#070c15');
+  bg.addColorStop(0, colors.chartGround[0]);
+  bg.addColorStop(0.55, colors.chartGround[1]);
+  bg.addColorStop(1, colors.chartGround[2]);
   g.fillStyle = bg;
   g.fillRect(0, 0, vw, vh);
 
@@ -3035,7 +3053,7 @@ function blankNewStation(lng, lat) {
     <h3>新建车站</h3>
     <p>坐标 ${lng.toFixed(4)}, ${lat.toFixed(4)} · 造价 ${COST_STATION} 亿元</p>
     <div class="field"><label>车站名称</label><input id="dlgStName" placeholder="例如：所街" maxlength="16"></div>
-    <p style="font-size:11px;color:#5d738f;margin:-4px 0 12px">新建的车站先进入站网、暂不隶属任何线路；之后用「画线」把它按顺序接入线路。</p>
+    <p style="font-size:11px;color:var(--dim);margin:-4px 0 12px">新建的车站先进入站网、暂不隶属任何线路；之后用「画线」把它按顺序接入线路。</p>
     <div class="dialogFoot">
       <button class="btn ghost" data-act="cancel">取消</button>
       <button class="btn primary" data-act="ok">建站</button>
@@ -3076,15 +3094,15 @@ function openSplitDialog(lineId, cutIdx) {
     <p>在 <b>${a ? a.name : '?'}</b> 与 <b>${b ? b.name : '?'}</b> 之间断开。
     前半段 <b>${headN}</b> 站仍叫「${line.name}」，后半段 <b>${tailN}</b> 站独立成新线。</p>
     <div style="display:flex;align-items:center;gap:8px;margin:12px 0 10px">
-      <span style="font-size:11.5px;color:#9db4d1;flex:0 0 52px">新线名称</span>
-      <input id="spName" value="${line.name}·新段" style="flex:1;min-width:0;background:#101d30;
-        border:1px solid rgba(120,180,255,.3);border-radius:6px;color:#dce8f7;padding:6px 8px;font-size:12px" />
+      <span style="font-size:11.5px;color:var(--muted);flex:0 0 52px">新线名称</span>
+      <input id="spName" value="${line.name}·新段" style="flex:1;min-width:0;background:var(--player-control);
+        border:1px solid rgba(120,180,255,.3);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" />
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
-      <span style="font-size:11.5px;color:#9db4d1;flex:0 0 52px">新线颜色</span>
+      <span style="font-size:11.5px;color:var(--muted);flex:0 0 52px">新线颜色</span>
       <div id="spSw" style="display:flex;gap:6px;flex-wrap:wrap"></div>
     </div>
-    <p style="color:#8ba3c4;font-size:11.5px;margin-top:10px">拆分属于运营调整，不产生建设费用。
+    <p style="color:var(--muted);font-size:11.5px;margin-top:10px">拆分属于运营调整，不产生建设费用。
     断点处真实轨道几何会被裁成两段，两段各自沿原位延伸。</p>
     <div class="dialogFoot">
       <button class="btn ghost" data-act="cancel">取消</button>
@@ -3138,16 +3156,16 @@ function openSplitPick() {
   openDialog(`<h3>拆分线路</h3>
     <p>选一条线和断点，把它拆成两条独立运营的线路，类似广州 2 号线 / 8 号线拆分。</p>
     <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
-      <span style="font-size:11.5px;color:#9db4d1;flex:0 0 52px">线路</span>
-      <select id="spLine" style="flex:1;min-width:0;background:#101d30;border:1px solid rgba(120,180,255,.3);
-        border-radius:6px;color:#dce8f7;padding:6px 8px;font-size:12px">${opts}</select>
+      <span style="font-size:11.5px;color:var(--muted);flex:0 0 52px">线路</span>
+      <select id="spLine" style="flex:1;min-width:0;background:var(--player-control);border:1px solid rgba(120,180,255,.3);
+        border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px">${opts}</select>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
-      <span style="font-size:11.5px;color:#9db4d1;flex:0 0 52px">断点</span>
-      <select id="spCut" style="flex:1;min-width:0;background:#101d30;border:1px solid rgba(120,180,255,.3);
-        border-radius:6px;color:#dce8f7;padding:6px 8px;font-size:12px">${cutHtml(curId)}</select>
+      <span style="font-size:11.5px;color:var(--muted);flex:0 0 52px">断点</span>
+      <select id="spCut" style="flex:1;min-width:0;background:var(--player-control);border:1px solid rgba(120,180,255,.3);
+        border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px">${cutHtml(curId)}</select>
     </div>
-    <p style="color:#8ba3c4;font-size:11.5px">拆分不产生建设费用，断点处的轨道几何按两段裁切。</p>
+    <p style="color:var(--muted);font-size:11.5px">拆分不产生建设费用，断点处的轨道几何按两段裁切。</p>
     <div class="dialogFoot">
       <button class="btn ghost" data-act="cancel">取消</button>
       <button class="btn" data-act="next">下一步</button>
@@ -3222,7 +3240,7 @@ function updateHover(x, y) {
   const linesHtml = st.lines.map(id => {
     const l = getLine(id);
     return l ? `<span style="color:${l.color};font-weight:600">${l.name}</span>` : '';
-  }).filter(Boolean).join('、') || '<span style="color:#5d738f">未接入任何线路</span>';
+  }).filter(Boolean).join('、') || '<span style="color:var(--dim)">未接入任何线路</span>';
   let rows = `<div class="tr"><span>车站权重</span><b>${(st.w * 100).toFixed(0)}</b></div>`;
   const XFDB = (typeof XFER !== 'undefined') ? XFER : null;
   const XFTY = (typeof XFER_TYPES !== 'undefined') ? XFER_TYPES : null;
@@ -3327,7 +3345,7 @@ function askDeleteStation(id) {
   const names = st.lines.map(lid => (getLine(lid) || {}).name).filter(Boolean).join('、') || '—';
   openDialog(`<h3>删除车站</h3>
     <p>${st.name} 被 <b>${used}</b> 条线路经过（${names}）。</p>
-    <p style="color:#8ba3c4;font-size:11.5px">「仅移出本线」只让当前选中的线路跳过这一站，其他线路照常停靠；「整站删除」会把车站从图上移除，所有线路都会出现断口。</p>
+    <p style="color:var(--muted);font-size:11.5px">「仅移出本线」只让当前选中的线路跳过这一站，其他线路照常停靠；「整站删除」会把车站从图上移除，所有线路都会出现断口。</p>
     <div class="dialogFoot">
       <button class="btn ghost" data-act="cancel">取消</button>
       ${cur ? `<button class="btn" data-act="detach">仅移出 ${cur.name}</button>` : ''}
@@ -3368,7 +3386,7 @@ function showStationCard(id) {
     <p>${st.lines.length > 1 ? '换乘车站' : '普通车站'} · 权重 ${(st.w * 100).toFixed(0)} · ${st.lng.toFixed(4)}, ${st.lat.toFixed(4)}</p>
     <div style="margin-bottom:14px;font-size:12px;color:#8ba3c4">${lines || '尚未接入线路'}</div>
     ${detachBtns ? `<div style="margin:-4px 0 12px">${detachBtns}</div>
-      <div style="font-size:11px;color:#5d738f;margin-bottom:12px">移出后列车经过此处不再停车，车站本身保留在图上。</div>` : ''}
+      <div style="font-size:11px;color:var(--dim);margin-bottom:12px">移出后列车经过此处不再停车，车站本身保留在图上。</div>` : ''}
     <div class="metricGrid" style="grid-template-columns:repeat(3,1fr)">
       <div class="statCard"><div class="k">今日上车</div><div class="v">${ss ? ss.board : 0}</div></div>
       <div class="statCard"><div class="k">今日下车</div><div class="v">${ss ? ss.alight : 0}</div></div>
@@ -3474,7 +3492,7 @@ function renderChallenges() {
     d.className = 'lineItem' + (App.challenge === c.id ? ' active' : '');
     d.dataset.id = c.id;
     d.innerHTML = `<span class="lineChip" style="background:#2b5f9e;font-size:9px">${c.name.slice(0, 1)}</span>
-      <span class="nm" style="flex:1">${c.name}<span style="display:block;font-size:10px;color:#5d738f;font-weight:400;margin-top:2px">${c.desc}</span></span>`;
+      <span class="nm" style="flex:1">${c.name}<span style="display:block;font-size:10px;color:var(--dim);font-weight:400;margin-top:2px">${c.desc}</span></span>`;
     d.addEventListener('click', () => selectChallenge(c));
     el.challengeList.appendChild(d);
   }

@@ -2,7 +2,30 @@
   'use strict';
 
   const recentKey = 'metro_lab_recent_v1';
+  const themeKey = 'metro_lab_theme_v1';
+  const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+  const themes = { system: '跟随系统', light: '浅色', dark: '深色' };
   const byId = id => document.getElementById(id);
+  let theme = 'system';
+  try { theme = readTheme(localStorage.getItem(themeKey)); } catch {}
+
+  function readTheme(value) {
+    return Object.hasOwn(themes, value) ? value : 'system';
+  }
+
+  function applyTheme() {
+    document.documentElement.dataset.theme = theme === 'system' ? (systemTheme.matches ? 'dark' : 'light') : theme;
+  }
+
+  applyTheme();
+  systemTheme.addEventListener('change', applyTheme);
+  window.addEventListener('storage', event => {
+    if (event.key !== themeKey && event.key !== null) return;
+    theme = readTheme(event.newValue);
+    applyTheme();
+    const selector = byId('player-theme');
+    if (selector) selector.value = theme;
+  });
 
   function create(tag, className, text) {
     const element = document.createElement(tag);
@@ -19,6 +42,22 @@
     return button;
   }
 
+  function addThemePicker(parent) {
+    const label = create('label', 'player-theme');
+    const title = create('span', 'player-theme-label', '外观');
+    const select = create('select', 'player-button');
+    select.id = 'player-theme';
+    for (const [value, name] of Object.entries(themes)) select.add(new Option(name, value));
+    select.value = theme;
+    select.addEventListener('change', () => {
+      theme = select.value;
+      try { localStorage.setItem(themeKey, theme); } catch {}
+      applyTheme();
+    });
+    label.append(title, select);
+    parent.append(label);
+  }
+
   function storeRecent(path) {
     try { localStorage.setItem(recentKey, path); } catch {}
   }
@@ -28,6 +67,7 @@
   }
 
   function lobby(search) {
+    addThemePicker(byId('metro-appearance'));
     const normalize = value => value.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, '');
     const sections = [...document.querySelectorAll('main > .grid')].map(grid => ({
       grid,
@@ -143,6 +183,7 @@
     const saveStatus = create('span', 'player-sr-only');
     saveStatus.setAttribute('role', 'status');
     controls.append(saveStatus);
+    addThemePicker(controls);
 
     const names = {
       zoomIn:'放大地图', zoomOut:'缩小地图', zoomFit:'适配全图',
@@ -202,7 +243,8 @@
     }).observe(wrapper);
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  // 在引擎的 document 初始化之后绑定游戏工具。
+  window.addEventListener('DOMContentLoaded', () => {
     const search = byId('metro-search');
     const app = byId('app');
     if (search) lobby(search);
