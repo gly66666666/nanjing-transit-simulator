@@ -3347,7 +3347,9 @@ function showStationCard(id) {
 /* ---------------- 地图事件 ---------------- */
 let dragStart = null;
 function bindMap() {
-  canvas.addEventListener('mousedown', e => {
+  canvas.addEventListener('pointerdown', e => {
+    if (!e.isPrimary || e.button !== 0) return;
+    if (e.pointerType !== 'mouse') canvas.setPointerCapture(e.pointerId);
     mouse.down = true; mouse.moved = false;
     mouse.sx = e.offsetX; mouse.sy = e.offsetY;
     mouse.x = e.offsetX; mouse.y = e.offsetY;
@@ -3359,9 +3361,10 @@ function bindMap() {
     canvas.classList.add('dragging');
   });
 
-  canvas.addEventListener('mouseenter', () => { mouse.inside = true; });
-  canvas.addEventListener('mouseleave', () => { mouse.inside = false; });
-  window.addEventListener('mousemove', e => {
+  canvas.addEventListener('pointerenter', () => { mouse.inside = true; });
+  canvas.addEventListener('pointerleave', () => { mouse.inside = false; });
+  window.addEventListener('pointermove', e => {
+    if (!e.isPrimary || (e.pointerType !== 'mouse' && !mouse.down)) return;
     const rect = canvas.getBoundingClientRect();
     const x = Math.max(-40, Math.min(W + 40, e.clientX - rect.left));
     const y = Math.max(-40, Math.min(H + 40, e.clientY - rect.top));
@@ -3390,8 +3393,8 @@ function bindMap() {
     }
   });
 
-  window.addEventListener('mouseup', e => {
-    if (!mouse.down) return;
+  function finishPointer(e) {
+    if (!e.isPrimary || !mouse.down) return;
     mouse.down = false;
     canvas.classList.remove('dragging');
     if (App.dragStation) {
@@ -3402,18 +3405,20 @@ function bindMap() {
       renderDetail();
       return;
     }
-    if (!mouse.moved) {
+    if (e.type !== 'pointercancel' && !mouse.moved) {
       const rect = canvas.getBoundingClientRect();
       handleClick(e.clientX - rect.left, e.clientY - rect.top);
     }
-  });
+  }
+  window.addEventListener('pointerup', finishPointer);
+  window.addEventListener('pointercancel', finishPointer);
 
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     zoomAt(e.offsetX, e.offsetY, e.deltaY > 0 ? 0.87 : 1.15);
   }, { passive: false });
 
-  canvas.addEventListener('mouseleave', () => {
+  canvas.addEventListener('pointerleave', () => {
     App.hover = null;
     el.tooltip.classList.remove('show');
   });

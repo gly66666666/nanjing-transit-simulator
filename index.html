@@ -5,15 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="选择城市或区域线网，规划线路并运行客流仿真。">
   <title>地铁线网实验室 · 中国城市合集</title>
+  <script src="assets/player-ui.js" defer></script>
   <style>
     :root { color-scheme: dark; font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; background: #080f1c; color: #edf4ff; }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at 20% 0%, #173253, transparent 52rem); }
     main { width: min(100%, 1080px); margin: 0 auto; padding: clamp(32px, 7vw, 76px) 24px 52px; }
     h1, h2, h3, p { margin: 0; }
     h1 { font-size: clamp(2.1rem, 6vw, 3.6rem); letter-spacing: -.035em; line-height: 1.12; }
     h2 { font-size: 1.1rem; margin: 34px 0 12px; color: #76ecda; letter-spacing: .06em; }
     .intro { color: #adc0d8; line-height: 1.7; margin-top: 14px; max-width: 62ch; }
+    .discovery { display: grid; gap: 12px; margin-top: 24px; padding: 15px; border: 1px solid #365676; border-radius: 12px; background: #0f1e32; }
+    .discovery-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .search-box { display: flex; flex: 1 1 260px; min-width: 0; background: #081423; border: 1px solid #547495; border-radius: 8px; overflow: hidden; }
+    .search-box:focus-within { outline: 2px solid #86bdff; outline-offset: 2px; }
+    #metro-search { flex: 1; width: 0; min-width: 0; padding: 10px 12px; border: 0; background: transparent; color: inherit; font: inherit; outline: none; }
+    #metro-search::placeholder { color: #9ab4d1; }
+    #metro-search::-webkit-search-cancel-button { display: none; }
+    #metro-clear { border: 0; background: transparent; padding-inline: 11px; color: #adc0d8; cursor: pointer; font: inherit; }
+    #metro-clear:hover { color: #fff; }
+    .catalog-filters { display: flex; gap: 5px; flex-wrap: wrap; }
+    .catalog-filters button { padding: 7px 9px; border: 1px solid #395575; background: #172943; color: #dce8fa; border-radius: 7px; font: inherit; font-size: .83rem; font-weight: 600; cursor: pointer; }
+    .catalog-filters button[aria-pressed="true"] { background: #21588e; border-color: #79b5ef; color: #fff; }
+    .catalog-filters button:hover { background: #294965; }
+    .discovery-count, .empty { color: #b0c5de; font-size: .87rem; }
+    .last-metro { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid #2a4260; }
+    .last-metro a { color: #d9fff8; padding: 7px 10px; border: 1px solid #518d85; border-radius: 7px; background: #19413f; text-decoration: none; }
+    .last-metro a:hover { background: #235550; }
+    .empty { margin-top: 22px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .region, .city-card { color: inherit; text-decoration: none; border: 1px solid #2d4563; border-radius: 12px; }
     .grid.region-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
     .region { display: flex; flex-direction: column; gap: 5px; height: 100%; padding: 13px 15px; border-left: 3px solid #50d9c4; background: #112b39; }
@@ -24,7 +45,7 @@
     .city-card strong { font-weight: 650; }
     .city-card span { color: #86bdff; font-size: .8rem; }
     .city-card:hover { border-color: #86bdff; background: #1a3050; }
-    a:focus-visible { outline: 2px solid #86bdff; outline-offset: 3px; }
+    a:focus-visible, button:focus-visible { outline: 2px solid #86bdff; outline-offset: 3px; }
     .note { color: #93a8c2; font-size: .85rem; line-height: 1.7; margin-top: 30px; border-top: 1px solid #1e3550; padding-top: 18px; }
   </style>
 </head>
@@ -32,6 +53,25 @@
   <main>
     <h1>地铁线网实验室 · 中国城市</h1>
     <p class="intro">选择城市或区域，规划地铁线路、调整运力并模拟早高峰。</p>
+    <section class="discovery" id="metro-discovery" aria-label="查找地图" hidden>
+      <div class="discovery-row">
+        <div class="search-box">
+          <label for="metro-search" class="sr-only">搜索城市或区域</label>
+          <input id="metro-search" type="search" placeholder="搜索城市或区域，如 南京、长三角" autocomplete="off" maxlength="40">
+          <button id="metro-clear" type="button" aria-label="清空搜索" hidden>×</button>
+        </div>
+        <div class="catalog-filters" role="group" aria-label="按版本筛选">
+          <button type="button" data-catalog-filter="all" aria-pressed="true">全部</button>
+          <button type="button" data-catalog-filter="city" aria-pressed="false">单城</button>
+          <button type="button" data-catalog-filter="region" aria-pressed="false">区域与城际</button>
+        </div>
+        <p id="metro-results-count" class="discovery-count" role="status"></p>
+      </div>
+      <div class="last-metro" id="last-metro-panel" hidden>
+        <a id="last-metro">继续上次打开的 <strong id="last-metro-name"></strong> →</a>
+      </div>
+    </section>
+    <p id="metro-no-results" class="empty" hidden>没有匹配的版本。试试缩短关键词或切换分类。</p>
     <h2>区域与城际</h2>
     <ul class="grid region-grid">
       <li><a class="region" href="./长三角六城地铁模拟器.html"><strong>长三角六城联动</strong><span>南京、常州、无锡、苏州、上海和南通。</span></a></li>
