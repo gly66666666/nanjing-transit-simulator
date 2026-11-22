@@ -225,15 +225,32 @@ select:focus{border-color:var(--accent)}
   padding:7px 11px;border-radius:9px;backdrop-filter:blur(8px)}
 .legend span{display:flex;align-items:center;gap:5px}
 .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+/* 换乘方式面板 */
+.xfStats{display:grid;grid-template-columns:repeat(auto-fit,minmax(50px,1fr));gap:5px;margin-bottom:8px}
+.xfStats div{background:rgba(255,255,255,.035);border:1px solid var(--stroke);border-radius:7px;
+  padding:5px 4px;text-align:center;font-size:9.5px;color:var(--dim);letter-spacing:.3px}
+.xfStats b{display:block;font-family:var(--mono);font-size:14px;font-weight:600;line-height:1.25;margin-top:1px}
+.xfList{max-height:232px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding-right:2px}
+.xfItem{display:flex;align-items:center;gap:6px;padding:4px 5px;border-radius:6px;font-size:11px;
+  color:var(--muted);cursor:pointer;transition:background .12s}
+.xfItem:hover{background:rgba(77,163,255,.12);color:#fff}
+.xfItem i{width:7px;height:7px;border-radius:50%;flex:none}
+.xfItem .nm{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xfItem .ln{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.3px}
+.xfItem .bld{font-size:9px;color:#ffb545;border:1px solid rgba(255,181,69,.4);border-radius:3px;padding:0 3px}
 .tooltip{position:absolute;pointer-events:none;z-index:10;opacity:0;transition:opacity .12s;
   background:rgba(9,16,28,.95);border:1px solid rgba(77,163,255,.4);border-radius:9px;padding:9px 11px;
-  font-size:11.5px;min-width:170px;box-shadow:0 10px 30px rgba(0,0,0,.5);backdrop-filter:blur(10px)}
+  font-size:11.5px;min-width:170px;max-width:300px;box-shadow:0 10px 30px rgba(0,0,0,.5);backdrop-filter:blur(10px)}
 .tooltip.show{opacity:1}
 .tooltip .tt{font-size:13px;font-weight:700;margin-bottom:2px;display:flex;align-items:center;gap:7px}
 .tooltip .tt i{width:8px;height:8px;border-radius:50%}
 .tooltip .tl{color:var(--dim);font-size:10.5px;letter-spacing:.4px;margin-bottom:6px}
 .tooltip .tr{display:flex;justify-content:space-between;gap:14px;color:var(--muted);line-height:1.7}
 .tooltip .tr b{font-family:var(--mono);color:var(--text);font-weight:500}
+.tooltip .xfRow{margin-top:5px;padding-top:5px;border-top:1px dashed rgba(140,170,205,.22)}
+.tooltip .xfD{margin-top:3px;color:#8fa7c2;font-size:10.5px;line-height:1.55;white-space:normal}
+.tooltip b .xfB{font-style:normal;font-size:9.5px;color:#ffb545;border:1px solid rgba(255,181,69,.45);
+  border-radius:4px;padding:0 4px;margin-left:5px;vertical-align:1px}
 
 /* 底部条 */
 footer{height:42px;flex:0 0 42px;display:flex;align-items:center;gap:12px;padding:0 16px;
@@ -436,6 +453,13 @@ body.mode-chart .chartTools{display:flex}
         </div>
       </div>
 
+      <!-- 换乘方式 -->
+      <div class="block">
+        <h2>换乘方式 / TRANSFERS <span class="badge" id="xfBadge">—</span></h2>
+        <div class="xfStats" id="xfStats"></div>
+        <div class="xfList" id="xfList"></div>
+      </div>
+
       <!-- 任务 -->
       <div class="block">
         <h2>挑战任务 / CHALLENGES</h2>
@@ -496,7 +520,11 @@ body.mode-chart .chartTools{display:flex}
         <span><i style="background:#3ad99b"></i>畅通</span>
         <span><i style="background:#ffb545"></i>拥挤</span>
         <span><i style="background:#ff5f74"></i>爆满</span>
-        <span>◦ 换乘站</span>
+        <span><i style="background:#ffc247"></i>同台</span>
+        <span><i style="background:#28d7c0"></i>节点</span>
+        <span><i style="background:#4da3ff"></i>通道</span>
+        <span><i style="background:#c08cff"></i>虚拟</span>
+        <span>（换乘站方式）</span>
         <span>▬ 列车</span>
         <span style="color:#ffb95e">┄ 在建线</span>
       </div>
@@ -937,6 +965,7 @@ const LINE_DEFS = [
 
 /* ---------- 城市地理装饰 ---------- */
 const GEO = {
+  cityView: { x: 47.5, y: 64.1, s: 13.2 },   // 默认聚焦主城，远郊线可缩小查看
   river: [[118.426,31.724],[118.448,31.756],[118.499,31.851],[118.535,31.884],
          [118.553,31.916],[118.586,31.950],[118.615,31.990],[118.646,32.016],
          [118.689,32.062],[118.706,32.093],[118.734,32.125],[118.774,32.187],
@@ -1189,6 +1218,76 @@ const DEMAND_BASE = 0.0075;    // 每站每分钟基准客流（按权重缩放�
 
 
 /* ============================================================
+   南京地铁换乘方式数据
+   来源：中文维基百科各站条目 infobox「interchange」字段、
+   南京地铁官网/官方换乘攻略（5、6 号线开通换乘指引）、
+   江北新区管委会 11 号线换乘通道工程通报。
+   类型：same 同台 / node 节点 / pass 通道(含站厅、厅台) / virtual 虚拟(出站)
+   b: 1 表示该换乘组合涉及在建线路（9/11/S5）
+   ============================================================ */
+const XFER_TYPES = {
+  same:    { name: '同台换乘', color: '#ffc247', desc: '同一岛式站台两侧直接换乘' },
+  node:    { name: '节点换乘', color: '#28d7c0', desc: '站台间设楼梯/节点，上下层直连' },
+  pass:    { name: '通道换乘', color: '#4da3ff', desc: '经换乘通道或站厅绕行换乘' },
+  virtual: { name: '虚拟换乘', color: '#c08cff', desc: '出站后步行至另一站付费区换乘' },
+  newx:    { name: '规划换乘', color: '#8fa3bb', desc: '规划线网新增的换乘站，无官方换乘方式' }
+};
+
+const XFER = {
+  '南京南站':      { t: 'same', l: '1·3 / 6·S1·S3', d: '1 与 3 号线同台；6 与 S1 贯通、并与 S3 同台；两场之间另有 240m 通道', m: ['1号线 ⇄ 3号线：同台', '6/S1 ⇄ S3：同台（6 与 S1 贯通）', '1·3 场 ⇄ 6·S1·S3 场：通道 240m'] },
+  '红山新城':      { t: 'same', l: '6·9', d: '同台换乘：同一岛式站台两侧的 6 号线与 9 号线列车互转', b: 1 },
+  '空港新城江宁':  { t: 'same', l: 'S1·S7', d: '同台换乘，部分列车贯通运营' },
+  '仙林湖':        { t: 'same', l: '4·S5', d: '4 号线与 S5 号线同台（S5 在建，西侧两股道预留）', b: 1 },
+  '翔宇路南':      { t: 'same', l: 'S1·S9', d: '双岛式站台，同台平行换乘（S1 轨道在外侧、S9 在内侧）' },
+
+  '新街口':        { t: 'node', l: '1·2', d: '单向垂直换乘 / 厅台换乘：2 号线站台下 1 层直达 1 号线站台，反向经站厅' },
+  '大行宫':        { t: 'node', l: '2·3', d: '节点换乘：3 号线站台南侧节点单向换 2 号线，反向走站厅' },
+  '鸡鸣寺':        { t: 'node', l: '3·4', d: '端头单向垂直换乘 / 厅台换乘' },
+  '草场门·南艺·二师': { t: 'node', l: '4·7', d: '两线站台之间设节点换乘通道，可快速换乘' },
+  '鼓楼':          { t: 'pass', l: '1·4', d: '站厅换乘（1 号线 -3 层、4 号线 -2 层，经站厅）' },
+  '云南路':        { t: 'node', l: '4·5', d: '站台间楼梯直上直下（原 4 号线预留换乘节点）' },
+  '上海路':        { t: 'node', l: '2·5', d: 'T 型节点换乘：5 号线站台楼梯直上 2 号线站台' },
+  '三山街':        { t: 'pass', l: '1·5', d: '通道换乘：5 号线站厅经换乘通道至 1 号线站厅' },
+  '夫子庙':        { t: 'pass', l: '3·5', d: '站厅换乘：穿越站厅进入另一线站厅再下站台' },
+  '福建路':        { t: 'node', l: '5·7', d: 'L 型节点换乘：5 号线站台一端楼梯下至 7 号线站台' },
+  '下关':          { t: 'node', l: '5·9', d: '节点换乘（9 号线在建，站厅与换乘通道已预留）', b: 1 },
+  '五塘广场':      { t: 'node', l: '3·7', d: '节点换乘：3 号线与 7 号线站台中部设楼梯互通' },
+  '晓庄':          { t: 'node', l: '1·7', d: '节点换乘：1 号线站台与 7 号线站台间设节点通道' },
+  '万寿':          { t: 'node', l: '6·7', d: 'T 形节点换乘：7 号线南北向、6 号线东西向' },
+  '钟阜路':        { t: 'node', l: '7·9', d: 'T 型换乘，两部分站台之间设节点（9 号线在建）', b: 1 },
+  '螺塘路':        { t: 'node', l: '2·7', d: 'T 型节点换乘（早晚高峰 2→7 需走站厅）' },
+  '元通':          { t: 'node', l: '2·10', d: '垂直换乘：上下层站台直连' },
+  '安德门':        { t: 'pass', l: '1·10', d: '通道换乘' },
+  '油坊桥':        { t: 'pass', l: '2·S3', d: '通道换乘' },
+  '永初路':        { t: 'pass', l: '7·S3', d: 'T 型通道换乘' },
+  '中胜':          { t: 'pass', l: '7·10', d: '立体十字交叉，经换乘通道由 7 号线站厅至 10 号线站台' },
+  '莫愁湖':        { t: 'pass', l: '2·7', d: '站厅换乘（设站厅换乘大厅）' },
+  '金马路':        { t: 'pass', l: '2·4', d: '厅台换乘：经站厅层换乘' },
+  '马群':          { t: 'pass', l: '2·S6', d: '垂直换乘：架空天桥 + 扶梯连接 2 号线高架与 S6 地下站' },
+  '明故宫':        { t: 'pass', l: '2·6', d: '通道换乘' },
+  '岗子村':        { t: 'pass', l: '4·6', d: '站厅换乘（6 号线侧叠式，与 4 号线站厅换乘）' },
+  '光华门':        { t: 'node', l: '5·6', d: '节点换乘（6 号线南北向、5 号线东西向正交叉）' },
+  '卡子门':        { t: 'node', l: '3·10', d: '节点换乘（3 号线南北向、10 号线东西向交叉）' },
+  '机场跑道旧址':  { t: 'node', l: '6·10', d: '节点换乘（6 号线南北向、10 号线沿老跑道东西向）' },
+  '大校场':        { t: 'node', l: '5·10', d: 'L 形节点换乘：10 号线 -2 层、5 号线 -3 层相交' },
+  '吉印大道':      { t: 'node', l: '5·S1', d: 'T 型换乘：5 号线侧式站台与 S1 岛式站台相接' },
+  '诚信大道':      { t: 'pass', l: '3·5', d: '通道换乘：经联络线上方长换乘通道（类似人民广场旧通道）' },
+  '竹山路':        { t: 'virtual', l: '1·5', d: '虚拟换乘（出站换乘）：经 3 号口出站步行至 1 号线 2 号口，30 分钟内连续计费' },
+  '南京站':        { t: 'pass', l: '1·3·9', d: '厅台换乘 / 长通道换乘 / 换乘层（9 号线在建）', b: 1 },
+  '泰冯路':        { t: 'pass', l: '3·S8', d: '厅台换乘' },
+  '柳洲东路':      { t: 'pass', l: '3·11', d: '通道换乘：负一层商业层与负二层站厅层双通道（11 号线在建）', b: 1 },
+  '长江大桥北':    { t: 'pass', l: 'S8·11', d: '通道换乘（11 号线在建，S8 南延接入）', b: 1 },
+  '浦口万汇城':    { t: 'pass', l: '10·11', d: '附属换乘通道连接 10 号线站厅（11 号线在建）', b: 1 },
+  '马骡圩':        { t: 'pass', l: 'S3·11', d: '通道换乘（11 号线在建）', b: 1 },
+  '江北商务区':    { t: 'pass', l: '4·11', d: '通道换乘（4 号线二期与 11 号线在此交汇，均在建）', b: 1 },
+  '龙江':          { t: 'pass', l: '4·9', d: '通道换乘（9 号线在建，与 4 号线站厅衔接）', b: 1 },
+  '绿博园':        { t: 'pass', l: '9·10', d: '通道换乘（9 号线在建）', b: 1 },
+  '西善桥':        { t: 'pass', l: '7·S2', d: '站厅/通道换乘：7 号线终点与 S2 起点共用站厅' }
+};
+delete XFER['鸡鸣寺2'];
+
+
+/* ============================================================
    引擎层：线网图 / 最短路 / 列车运行 / 客流仿真
    ============================================================ */
 'use strict';
@@ -1262,7 +1361,7 @@ function buildWorld() {
     for (const name of def.stations) {
       let st = App.stations.get(name);
       if (!st) {
-        const c = COORD[name] || [118.79, 32.04];
+        const c = COORD[name] || [LNG0, LAT0];
         st = {
           id: name, name,
           lng: c[0], lat: c[1],
@@ -1278,6 +1377,7 @@ function buildWorld() {
     App.lines.push({
       id: def.id, name: def.name, short: def.short, color: def.color,
       headway: def.headway, speed: def.speed, cap: def.cap,
+      bldHead: def.bldHead || 0, bldTail: def.bldTail || 0,
       stations: ids, enabled: true, custom: false, segs: null,
       pax: 0, peakLoad: 0, fleet: 0, ontime: 0, late: 0, depTimer: 0
     });
@@ -2336,6 +2436,28 @@ function smoothPath(pts) {
   }
 }
 
+/* 站点折线（无真实轨道几何时）：直线段 + 小圆角，避免样条过冲造成的虚假弯弧 */
+function cornerPath(pts, rMax) {
+  ctx.beginPath();
+  if (pts.length < 2) return;
+  ctx.moveTo(pts[0].x, pts[0].y);
+  if (pts.length === 2) { ctx.lineTo(pts[1].x, pts[1].y); return; }
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+    const d1 = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    const d2 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (d1 < 0.01 || d2 < 0.01) { ctx.lineTo(p1.x, p1.y); continue; }
+    const r = Math.min(rMax, d1 * 0.42, d2 * 0.42);
+    if (r < 0.8) { ctx.lineTo(p1.x, p1.y); continue; }
+    const ax = p1.x + (p0.x - p1.x) / d1 * r, ay = p1.y + (p0.y - p1.y) / d1 * r;
+    const bx = p1.x + (p2.x - p1.x) / d2 * r, by = p1.y + (p2.y - p1.y) / d2 * r;
+    ctx.lineTo(ax, ay);
+    ctx.quadraticCurveTo(p1.x, p1.y, bx, by);
+  }
+  const last = pts[pts.length - 1];
+  ctx.lineTo(last.x, last.y);
+}
+
 /* ---------- 背景 ---------- */
 function drawBackground() {
   const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -2366,7 +2488,7 @@ function drawBackground() {
 
   // 区域名称（弱化，作为地理参照）
   if (App.cam.s > 6) {
-    const regions = [
+    const regions = GEO.regions || [
       ['河 西', 118.735, 32.020], ['仙 林', 118.905, 32.098], ['江 宁', 118.850, 31.945],
       ['江北新区', 118.700, 32.120], ['紫金山', 118.850, 32.060], ['老 山', 118.600, 32.100],
       ['主 城', 118.788, 32.045], ['江 宁 大 学 城', 118.830, 31.900]
@@ -2374,9 +2496,9 @@ function drawBackground() {
     for (const [name, lng, lat] of regions) {
       const p = w2s((lng - LNG0) * KX, (LAT0 - lat) * KY);
       if (p.x < 20 || p.x > W - 20 || p.y < 20 || p.y > H - 20) continue;
-      ctx.font = '600 12px "Microsoft YaHei","Segoe UI"';
+      ctx.font = '600 13px "Microsoft YaHei","Segoe UI"';
       ctx.textAlign = 'center';
-      ctx.fillStyle = 'rgba(122,164,206,0.20)';
+      ctx.fillStyle = 'rgba(122,164,206,0.26)';
       ctx.fillText(name, p.x, p.y);
     }
     ctx.textAlign = 'left';
@@ -2418,21 +2540,22 @@ function drawBackground() {
   ctx.strokeStyle = 'rgba(58,116,158,0.12)'; ctx.lineWidth = Math.max(2, rw * 0.3);
   smoothPath(pts); ctx.stroke();
 
-  // “长江”字样
+  // 大河字样（默认南京长江，可用 GEO.riverLabel 覆写）
+  const rl = GEO.riverLabel || { lng: 118.900, lat: 32.176, rot: -0.48, text: '长   江' };
   if (App.cam.s > 8) {
-    const p = w2s((118.900 - LNG0) * KX, (LAT0 - 32.176) * KY);
+    const p = w2s((rl.lng - LNG0) * KX, (LAT0 - rl.lat) * KY);
     ctx.save();
-    ctx.translate(p.x, p.y); ctx.rotate(-0.48);
+    ctx.translate(p.x, p.y); ctx.rotate(rl.rot);
     ctx.font = '600 14px "Microsoft YaHei","Segoe UI"';
     ctx.fillStyle = 'rgba(132,190,230,0.34)';
-    ctx.fillText('长   江', 0, 0);
+    ctx.fillText(rl.text, 0, 0);
     ctx.restore();
   }
 }
 
 /* ---------- 线路 ---------- */
 function drawLines() {
-  const lw = Math.max(2.4, Math.min(7.5, App.cam.s * 0.2));
+  const lw = Math.max(3.0, Math.min(8.6, App.cam.s * 0.215));
   for (const line of App.lines) {
     const arms = lineArms(line);
     if (!arms.some(a => a.stations.length >= 2)) continue;
@@ -2440,7 +2563,10 @@ function drawLines() {
     const tk = off ? null : trackOf(line.id);
     const paths = [];
     const useTrack = !!tk && mainMatchesDef(line);
-    if (useTrack) paths.push(tk.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY)));
+    if (useTrack) {
+      const segs = (typeof TRACK_SEG !== 'undefined' && TRACK_SEG[line.id]) ? TRACK_SEG[line.id] : [tk];
+      for (const seg of segs) paths.push({ pts: seg.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY)), tk: true });
+    }
     for (let ai = useTrack ? 1 : 0; ai < arms.length; ai++) {
       const arm = arms[ai];
       if (arm.stations.length < 2) continue;
@@ -2448,27 +2574,47 @@ function drawLines() {
         const st = App.stations.get(id);
         return st ? w2s(st.x, st.y) : null;
       }).filter(Boolean);
-      if (pts.length >= 2) paths.push(pts);
+      if (pts.length >= 2) paths.push({ pts, tk: false });
     }
+    const rMax = Math.max(2.5, Math.min(13, lw * 3.4));
+    const paint = (o) => { if (o.tk) smoothPath(o.pts); else cornerPath(o.pts, rMax); };
+    const paintPts = (pts) => cornerPath(pts, rMax);
     const sel = line.id === App.selectedLine || line.id === App.editingLine;
     const on = line.enabled;
     // 在建线路画虚线，与运营线（含同为橙色系的 S4/S8）区分开
     const bld = typeof BUILDING_IDS !== 'undefined' && BUILDING_IDS.indexOf(line.id) >= 0;
     const dash = bld ? [lw * 2.4, lw * 1.8] : null;
+    // 延伸段（如苏州 2 号线北延）在建：用同色虚线覆盖该段
+    const bldSegs = [];
+    if (line.bldHead || line.bldTail) {
+      const st = line.stations;
+      const ptsOf = (arr) => arr.map(id => {
+        const s = App.stations.get(id);
+        return s ? w2s(s.x, s.y) : null;
+      }).filter(Boolean);
+      if (line.bldHead) bldSegs.push(ptsOf(st.slice(0, line.bldHead + 1)));
+      if (line.bldTail) bldSegs.push(ptsOf(st.slice(st.length - line.bldTail - 1)));
+    }
+    const luma = (hex) => {
+      const h = hex.replace('#', '');
+      const r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
+      return 0.299 * r + 0.587 * g + 0.114 * b;
+    };
+    const lightLine = luma(line.color) > 0.62;
 
-    // 外描边（暗色线在深底上的可读性靠浅色边）
+    // 外描边（暗色线用浅边、浅色线用深边，保证深底可读）
     ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(206,226,248,0.22)';
-    ctx.lineWidth = lw + 3.2;
+    ctx.strokeStyle = lightLine ? 'rgba(6,14,26,0.80)' : 'rgba(206,226,248,0.22)';
+    ctx.lineWidth = lightLine ? lw + 3.8 : lw + 3.2;
     if (dash) ctx.setLineDash(dash);
-    for (const pts of paths) { smoothPath(pts); ctx.stroke(); }
+    for (const o of paths) { paint(o); ctx.stroke(); }
     ctx.setLineDash([]);
 
     if (!on) {
       ctx.setLineDash([6, 7]);
       ctx.strokeStyle = 'rgba(120,140,165,0.55)';
       ctx.lineWidth = Math.max(1.8, lw * 0.55);
-      for (const pts of paths) { smoothPath(pts); ctx.stroke(); }
+      for (const o of paths) { paint(o); ctx.stroke(); }
       ctx.setLineDash([]);
       continue;
     }
@@ -2481,20 +2627,38 @@ function drawLines() {
       ctx.shadowBlur = 18;
       ctx.strokeStyle = line.color;
       ctx.lineWidth = lw;
-      for (const pts of paths) { smoothPath(pts); ctx.stroke(); }
+      for (const o of paths) { paint(o); ctx.stroke(); }
       ctx.restore();
     }
     ctx.strokeStyle = line.color;
     ctx.lineWidth = lw;
-    for (const pts of paths) { smoothPath(pts); ctx.stroke(); }
+    for (const o of paths) { paint(o); ctx.stroke(); }
 
     // 高光
     if (App.cam.s > 9) {
       ctx.strokeStyle = sel ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.13)';
       ctx.lineWidth = Math.max(1, lw * (sel ? 0.34 : 0.28));
-      for (const pts of paths) { smoothPath(pts); ctx.stroke(); }
+      for (const o of paths) { paint(o); ctx.stroke(); }
     }
     ctx.setLineDash([]);
+
+    // 在建延伸段：先把该段清出地盘，再画同色虚线，断口才能露出底色
+    if (bldSegs.length) {
+      ctx.lineCap = 'butt';
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(6,13,24,0.96)';
+      ctx.lineWidth = lw + 4.6;
+      for (const pts of bldSegs) { paintPts(pts); ctx.stroke(); }
+      const d2 = [lw * 2.2, lw * 1.7];
+      ctx.setLineDash(d2);
+      ctx.strokeStyle = lightLine ? 'rgba(6,14,26,0.72)' : 'rgba(206,226,248,0.22)';
+      ctx.lineWidth = lw + 3.2;
+      for (const pts of bldSegs) { paintPts(pts); ctx.stroke(); }
+      ctx.strokeStyle = line.color;
+      ctx.lineWidth = lw;
+      for (const pts of bldSegs) { paintPts(pts); ctx.stroke(); }
+      ctx.setLineDash([]);
+    }
     ctx.lineCap = 'round';
   }
 }
@@ -2503,8 +2667,9 @@ function drawLines() {
 function drawStations() {
   const sim = App.sim;
   const s = App.cam.s;
-  const transitR = Math.max(3.4, Math.min(7.2, s * 0.3));
-  const tinyR = Math.max(1.9, Math.min(4.4, s * 0.19));
+  const termSet = terminalSet();
+  const transitR = Math.max(4.0, Math.min(7.8, s * 0.31));
+  const tinyR = Math.max(2.1, Math.min(4.7, s * 0.2));
 
   for (const [id, st] of App.stations) {
     const p = w2s(st.x, st.y);
@@ -2537,12 +2702,29 @@ function drawStations() {
       ctx.lineWidth = 1.4;
       ctx.stroke();
     } else if (isTrans) {
+      const xf = (typeof XFER !== 'undefined') ? XFER[st.name] : undefined;
+      const xcol = (xf && typeof XFER_TYPES !== 'undefined' && XFER_TYPES[xf.t]) ? XFER_TYPES[xf.t].color : '#8aa6c4';
       ctx.fillStyle = '#f2f8ff';
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(p.x, p.y, r * 0.42, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, r * 0.46, 0, Math.PI * 2);
       ctx.fillStyle = '#0b1524';
       ctx.fill();
+      // 换乘方式标记环：外圈按方式着色（虚拟换乘用虚线）
+      ctx.save();
+      ctx.strokeStyle = xcol;
+      ctx.lineWidth = Math.max(1, Math.min(1.9, r * 0.24));
+      if (xf && xf.t === 'virtual') { ctx.setLineDash([r * 0.55, r * 0.5]); }
+      ctx.beginPath(); ctx.arc(p.x, p.y, r + 1.3, 0, Math.PI * 2); ctx.stroke();
+      if (xf && xf.t === 'same' && xf.b !== 1) {
+        // 同台换乘：环外加两枚对向小箭头刻度
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(p.x - r - 4.2, p.y); ctx.lineTo(p.x - r - 1.4, p.y - 2.6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p.x - r - 4.2, p.y); ctx.lineTo(p.x - r - 1.4, p.y + 2.6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p.x + r + 4.2, p.y); ctx.lineTo(p.x + r + 1.4, p.y - 2.6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p.x + r + 4.2, p.y); ctx.lineTo(p.x + r + 1.4, p.y + 2.6); ctx.stroke();
+      }
+      ctx.restore();
       ctx.strokeStyle = 'rgba(10,20,35,0.65)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
@@ -2554,6 +2736,12 @@ function drawStations() {
     if (st.custom) {
       ctx.strokeStyle = '#28d7c0'; ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.arc(p.x, p.y, r + 2.5, 0, Math.PI * 2); ctx.stroke();
+    }
+    // 线路端点（首站 / 末站）：外加一圈白色细环，与中途站区分
+    if (termSet.has(id) && st.lines.length > 0) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.62)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r + 2.6, 0, Math.PI * 2); ctx.stroke();
     }
   }
 
@@ -2612,47 +2800,89 @@ function drawTrains() {
 
 /* ---------- 站名 ---------- */
 const labelBoxes = [];
-function placeLabel(x, y, w, h) {
+function placeLabel(x, y, w, h, maxHit) {
+  let hit = 0;
   for (const r of labelBoxes) {
-    if (!(x > r.x + r.w || x + w < r.x || y > r.y + r.h || y + h < r.y)) return false;
+    if (!(x > r.x + r.w || x + w < r.x || y > r.y + r.h || y + h < r.y)) {
+      if (++hit > (maxHit || 0)) return false;
+    }
   }
   labelBoxes.push({ x, y, w, h });
   return true;
 }
+/* 每条运营线（含支线）的首末站：这些站必须始终标出站名 */
+function terminalSet() {
+  const T = new Set();
+  for (const l of App.lines) {
+    for (const arm of lineArms(l)) {
+      const st = arm.stations;
+      if (!st || st.length === 0) continue;
+      T.add(st[0]);
+      T.add(st[st.length - 1]);
+    }
+  }
+  return T;
+}
+
 function drawLabels() {
   labelBoxes.length = 0;
   const s = App.cam.s;
-  if (s < 7) return;
+  if (s < 4.2) return;
   const font = s > 22 ? 11.5 : s > 15 ? 10.5 : 10;
   ctx.font = `500 ${font}px "Segoe UI","Microsoft YaHei"`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
+  const TERM = terminalSet();
   const priority = [];
   for (const [id, st] of App.stations) {
     const trans = st.lines.length > 1;
     const sel = App.selectedLine && st.lines.includes(App.selectedLine);
-    if (!trans && !sel) {
-      if (s < 22) continue;
-      if (s < 28 && st.w < 0.86) continue;
+    const term = TERM.has(id) && st.lines.length > 0;
+    if (!trans && !sel && !term) {
+      if (s < 11) continue;
+      if (s < 26 && st.w < 0.62) continue;
     }
-    priority.push({ st, trans, sel });
+    priority.push({ st, trans, sel, term });
   }
-  priority.sort((a, b) => (b.trans - a.trans) || (b.sel - a.sel) || (b.st.w - a.st.w));
-  if (priority.length > 150) priority.length = 150;
+  priority.sort((a, b) => (b.trans - a.trans) || (b.term - a.term) || (b.sel - a.sel) || (b.st.w - a.st.w));
+  if (priority.length > 200) {
+    // 端点与换乘站不截断
+    const keep = priority.filter(p => p.term || p.trans);
+    const rest = priority.filter(p => !p.term && !p.trans).slice(0, Math.max(0, 200 - keep.length));
+    priority.length = 0;
+    priority.push(...keep, ...rest);
+  }
 
-  for (const { st, trans } of priority) {
+  for (const { st, trans, term } of priority) {
     const p = w2s(st.x, st.y);
-    if (p.x < 6 || p.x > W - 6 || p.y < 10 || p.y > H - 10) continue;
+    if (p.x < -8 || p.x > W + 8 || p.y < -8 || p.y > H + 8) continue;
+    ctx.font = `${term ? 700 : 500} ${term ? font + 0.5 : font}px "Segoe UI","Microsoft YaHei"`;
     const tw = ctx.measureText(st.name).width;
-    const tx = p.x + (trans ? 9 : 7), ty = p.y - 10;
-    if (!placeLabel(tx - 2, ty - font * 0.72, tw + 4, font * 1.35)) continue;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(5,10,18,0.85)';
-    ctx.strokeText(st.name, tx, ty);
-    ctx.fillStyle = trans ? '#eaf3ff' : 'rgba(198,216,238,0.88)';
-    ctx.fillText(st.name, tx, ty);
+    // 端点靠边时优先朝画面内侧排字
+    const edge = [];
+    if (p.x > W - 130) edge.push([-9, -10, 'right'], [-9, 12, 'right']);
+    else if (p.x < 130) edge.push([9, -10, 'left'], [9, 12, 'left']);
+    if (p.y < 60) edge.push([0, 20, 'center'], [9, 16, 'left'], [-9, 16, 'right']);
+    else if (p.y > H - 60) edge.push([0, -18, 'center'], [9, -16, 'left'], [-9, -16, 'right']);
+    const base = trans
+      ? [[9, -10, 'left'], [-9, -10, 'right'], [9, 12, 'left'], [-9, 12, 'right'], [0, -17, 'center']]
+      : [[7, -10, 'left'], [-7, -10, 'right'], [7, 12, 'left'], [-7, 12, 'right']];
+    const cands = edge.concat(base);
+    for (const [dx, dy, al] of cands) {
+      ctx.textAlign = al;
+      const tx = p.x + dx, ty = p.y + dy;
+      const x0 = al === 'left' ? tx : al === 'right' ? tx - tw : tx - tw / 2;
+      if (!placeLabel(x0 - 4, ty - font * 0.8, tw + 8, font * 1.62, term ? 1 : 0)) continue;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(5,10,18,0.88)';
+      ctx.strokeText(st.name, tx, ty);
+      ctx.fillStyle = term ? '#ffffff' : trans ? '#eaf3ff' : 'rgba(190,208,230,0.78)';
+      ctx.fillText(st.name, tx, ty);
+      break;
+    }
   }
+  ctx.textAlign = 'left';
 }
 
 /* ---------- 编辑层 ---------- */
@@ -2742,7 +2972,37 @@ function fitView(padding = 34) {
 }
 
 function fitCity() {
-  App.cam.x = 49.0; App.cam.y = 65.0; App.cam.s = 17.2;
+  const hasView = (typeof GEO !== 'undefined' && GEO.cityView);
+  if (!hasView) { fitView(48); return; }
+  const v = GEO.cityView;
+  App.cam.x = v.x; App.cam.y = v.y; App.cam.s = v.s;
+  App.dirty = true;
+  if (App.stations.size === 0) return;
+  // 端点（首末站）若被裁到画外：小幅平移视野把首末站捞回画面，不改变缩放
+  const terms = [];
+  for (const id of terminalSet()) { const st = App.stations.get(id); if (st) terms.push(st); }
+  if (!terms.length) return;
+  let sx0 = 1e9, sx1 = -1e9, sy0 = 1e9, sy1 = -1e9;
+  for (const st of terms) {
+    const px = (st.x - App.cam.x) * v.s + W / 2;
+    const py = (st.y - App.cam.y) * v.s + H / 2;
+    if (px < sx0) sx0 = px; if (px > sx1) sx1 = px;
+    if (py < sy0) sy0 = py; if (py > sy1) sy1 = py;
+  }
+  const padL = 330, padR = 40, padT = 46, padB = 70;
+  let dX = 0, dY = 0;
+  if (sx0 < padL && sx1 < W - padR) dX = Math.min(padL - sx0, (W - padR) - sx1);
+  else if (sx1 > W - padR && sx0 > padL) dX = -Math.min(sx1 - (W - padR), sx0 - padL);
+  else if (sx0 < padL) dX = Math.min((W - padR) - sx1 > 0 ? (W - padR - sx1) / 2 : 0, padL - sx0);
+  if (sy0 < padT && sy1 < H - padB) dY = Math.min(padT - sy0, (H - padB) - sy1);
+  else if (sy1 > H - padB && sy0 > padT) dY = -Math.min(sy1 - (H - padB), sy0 - padT);
+  dX = Math.max(-220, Math.min(220, dX));
+  dY = Math.max(-180, Math.min(180, dY));
+  if (dX || dY) {
+    App.cam.x -= dX / v.s;
+    App.cam.y -= dY / v.s;
+    App.dirty = true;
+  }
 }
 
 function zoomAt(sx, sy, factor) {
@@ -3453,10 +3713,10 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   g.textBaseline = 'alphabetic';
   g.fillStyle = '#0d1624';
   g.font = `700 ${Math.round(24 * k)}px ${CHART_FONT}`;
-  g.fillText('南京地铁线网图', sx0 + 34 * k, sy0 + 44 * k);
+  g.fillText((document.title.split('·')[0] || '线网').trim() + '线网图', sx0 + 34 * k, sy0 + 44 * k);
   g.fillStyle = '#7d8999';
   g.font = `600 ${Math.round(9 * k)}px ${CHART_FONT}`;
-  g.fillText('N A N J I N G   M E T R O   N E T W O R K   M A P', sx0 + 35 * k, sy0 + 64 * k);
+  g.fillText((GEO.meta || 'N A N J I N G   M E T R O   N E T W O R K   M A P').replace(/_/g, ' '), sx0 + 35 * k, sy0 + 64 * k);
 
   let nSt = 0;
   for (const st of App.stations.values()) if (st.lines.length) nSt++;
@@ -3544,7 +3804,7 @@ function chartExport() {
   g3.fillRect(0, 0, w, h);
   g3.drawImage(c2, x, y, w, h, 0, 0, w, h);
   const a = document.createElement('a');
-  a.download = '南京地铁线网图.png';
+  a.download = (document.title.split('·')[0] || '线网').trim() + '线网图.png';
   a.href = c3.toDataURL('image/png');
   a.click();
 }
@@ -3582,7 +3842,8 @@ const el = {
   modePill: $('modePill'), modePillText: $('modePillText'), netPill: $('netPill'),
   tooltip: $('tooltip'), eventLog: $('eventLog'),
   tlFill: $('tlFill'), tlMark: $('tlMark'), footPlay: $('footPlay'), tlRange: $('tlRange'),
-  challengeList: $('challengeList'), modal: $('modal'), toast: $('toast')
+  challengeList: $('challengeList'), modal: $('modal'), toast: $('toast'),
+  xfStats: $('xfStats'), xfList: $('xfList'), xfBadge: $('xfBadge')
 };
 
 /* ---------------- 模式 ---------------- */
@@ -3636,9 +3897,11 @@ function renderLineList() {
     const capEff = line.capEff || Math.max(6, Math.round(line.cap * K.CAP_RATIO));
     const avgLoad = line.loadCount ? line.loadSum / line.loadCount : 0;
     const peak = App.sim && App.sim.lineStats[line.id] ? Math.round(avgLoad / capEff * 100) : null;
+    const bldMark = BUILDING_IDS.indexOf(line.id) >= 0 ? '<i class="bld">在建</i>'
+      : (line.bldHead || line.bldTail) ? '<i class="bld">延伸在建</i>' : '';
     item.innerHTML = `
       <span class="lineChip" style="background:${line.color}">${line.short}</span>
-      <span class="nm">${line.name}${BUILDING_IDS.indexOf(line.id) >= 0 ? '<i class="bld">在建</i>' : ''}</span>
+      <span class="nm">${line.name}${bldMark}</span>
       <span class="ct">${uniqueCount(line)}站${lineArms(line).length > 1 ? '·' + lineArms(line).length + '支' : ''}${peak !== null ? ' · ' + peak + '%' : ''}</span>
       <span class="dot"></span>`;
     item.addEventListener('click', () => selectLine(line.id));
@@ -3653,8 +3916,11 @@ function renderLineList() {
   };
   const blds = App.lines.filter(l => BUILDING_IDS.indexOf(l.id) >= 0).sort(cmp);
   const ops = App.lines.filter(l => BUILDING_IDS.indexOf(l.id) < 0).sort(cmp);
-  if (blds.length) { head(`在建 · CONSTRUCTING ${blds.length}`); blds.forEach(makeItem); }
-  head(`运营 · IN SERVICE ${ops.length}`);
+  if (blds.length) {
+    head(`在建 · CONSTRUCTING ${blds.length}`);
+    blds.forEach(makeItem);
+    head(`运营 · IN SERVICE ${ops.length}`);
+  }
   ops.forEach(makeItem);
   el.lineList.innerHTML = '';
   el.lineList.appendChild(frag);
@@ -3662,6 +3928,7 @@ function renderLineList() {
   el.netBadge.textContent = `${ns.lines} 线 / ${ns.stations} 站`;
   el.netPill.textContent = `${ns.lines} 条线 · ${ns.stations} 站 · ${Math.round(ns.km)} km`;
   updateNetStat();
+  if (typeof renderXfers === 'function') { try { renderXfers(); } catch (e) {} }
 }
 function rankOf(l) {
   const order = ['L1','L2','L3','L4','L5','L6','L7','L9','L10','L11','S1','S2','S3','S4','S5','S6','S7','S8','S9'];
@@ -3685,7 +3952,10 @@ function renderDetail() {
   el.dtChip.textContent = line.short;
   el.dtChip.style.background = line.color;
   el.dtName.textContent = line.name;
-  el.dtSub.textContent = `${uniqueCount(line)} 站` + (lineArms(line).length > 1 ? ` · ${lineArms(line).length} 臂` : '');
+  const arm0 = lineArms(line)[0] || { stations: [] };
+  const firstSt = arm0.stations[0] || '', lastSt = arm0.stations[arm0.stations.length - 1] || '';
+  el.dtSub.textContent = (firstSt && lastSt ? `${firstSt} ⇄ ${lastSt} · ` : '')
+    + `${uniqueCount(line)} 站` + (lineArms(line).length > 1 ? ` · ${lineArms(line).length} 臂` : '');
   el.dtHeadway.value = line.headway;
   el.dtSpeed.value = line.speed;
   el.dtCap.value = line.cap;
@@ -3957,9 +4227,15 @@ $('btnFinishLine').addEventListener('click', () => {
 
 /* ---------------- 恢复真实线网 ---------------- */
 $('btnReset').addEventListener('click', () => {
+  const bldNames = App.lines.filter(l => BUILDING_IDS.indexOf(l.id) >= 0).map(l => l.name);
+  const extNames = App.lines.filter(l => l.bldHead || l.bldTail).map(l => l.name);
+  const bldTxt = bldNames.length
+    ? ` + ${bldNames.length} 条在建线路（${bldNames.join('、')}）`
+    : (extNames.length ? `（${extNames.join('、')}另有延伸段在建）` : '');
+  const nsAll = networkStats();
   openDialog(`
     <h3>恢复真实线网</h3>
-    <p>将丢弃全部规划改动，回到 2026 年 11 月的真实线网：15 条运营线路 + 4 条在建线路（9 号线、11 号线、S4 宁滁、S5 宁扬），共 326 座车站。预算同步重置。</p>
+    <p>将丢弃全部规划改动，回到 2026 年 11 月的真实线网：${App.lines.length - bldNames.length} 条运营线路${bldTxt}，共 ${nsAll.stations} 座车站。预算同步重置。</p>
     <div class="dialogFoot">
       <button class="btn ghost" data-act="cancel">取消</button>
       <button class="btn primary" data-act="ok">确认恢复</button>
@@ -4205,6 +4481,16 @@ function updateHover(x, y) {
     return l ? `<span style="color:${l.color};font-weight:600">${l.name}</span>` : '';
   }).filter(Boolean).join('、') || '<span style="color:#5d738f">未接入任何线路</span>';
   let rows = `<div class="tr"><span>车站权重</span><b>${(st.w * 100).toFixed(0)}</b></div>`;
+  const XFDB = (typeof XFER !== 'undefined') ? XFER : null;
+  const XFTY = (typeof XFER_TYPES !== 'undefined') ? XFER_TYPES : null;
+  const xf = XFDB ? XFDB[st.name] : undefined;
+  let xferHtml = '';
+  if (xf && XFTY && XFTY[xf.t]) {
+    const ty = XFTY[xf.t];
+    xferHtml = `<div class="tr xfRow"><span>换乘方式</span><b style="color:${ty.color}">${ty.name}${xf.b ? '<i class="xfB">在建</i>' : ''}</b></div>
+      <div class="tr"><span>换乘线路</span><b>${xf.l}</b></div>
+      <div class="xfD">${xf.d}${xf.m ? '<br>' + xf.m.join('<br>') : ''}</div>`;
+  }
   if (sim) {
     rows += `<div class="tr"><span>站台等待</span><b style="color:${ss && ss.queue > 300 ? '#ff5f74' : '#e9f1ff'}">${ss ? ss.queue : 0} 人</b></div>
              <div class="tr"><span>今日上车</span><b>${ss ? ss.board : 0}</b></div>`;
@@ -4212,6 +4498,7 @@ function updateHover(x, y) {
   el.tooltip.innerHTML = `
     <div class="tt"><i style="background:${st.lines.length ? getLine(st.lines[0]).color : '#5d738f'}"></i>${st.name}</div>
     <div class="tl">${linesHtml}</div>
+    ${xferHtml}
     ${rows}
     ${st.custom ? '<div class="tr" style="margin-top:4px;color:#28d7c0"><span>规划新建车站</span></div>' : ''}`;
   el.tooltip.classList.add('show');
@@ -4725,6 +5012,53 @@ function startAutoSave() {
   window.addEventListener('beforeunload', () => saveNow(true));
 }
 
+/* ---------------- 换乘方式面板 ---------------- */
+const XFER_ORDER = ['same', 'node', 'pass', 'virtual', 'newx'];
+function renderXfers() {
+  if (!el.xfList) return;
+  const XFDB = (typeof XFER !== 'undefined') ? XFER : {};
+  const XFTY = (typeof XFER_TYPES !== 'undefined' && XFER_TYPES) ? XFER_TYPES : {
+    same: { name: '同台换乘', color: '#ffc247' }, node: { name: '节点换乘', color: '#28d7c0' },
+    pass: { name: '通道换乘', color: '#4da3ff' }, virtual: { name: '虚拟换乘', color: '#c08cff' },
+    newx: { name: '规划换乘', color: '#8fa3bb' }
+  };
+  const items = [];
+  for (const [id, st] of App.stations) {
+    if (!st.lines || st.lines.length < 2) continue;
+    const xf = XFDB[st.name];
+    const shortOf = x => { const L = getLine(x); return L ? L.short : x; };
+    items.push({
+      id, n: st.name, t: xf ? xf.t : 'newx',
+      l: xf ? xf.l : st.lines.map(shortOf).join('·'),
+      b: !!(xf && xf.b), d: xf ? xf.d : '规划线网新增换乘站'
+    });
+  }
+  items.sort((a, b) => XFER_ORDER.indexOf(a.t) - XFER_ORDER.indexOf(b.t)
+    || b.b - a.b || a.n.localeCompare(b.n, 'zh'));
+  const cnt = t => items.filter(i => i.t === t).length;
+  if (el.xfBadge) el.xfBadge.textContent = items.length + ' 站';
+  if (el.xfStats) {
+    el.xfStats.innerHTML = XFER_ORDER.filter(t => cnt(t) > 0).map(t => {
+      const ty = XFTY[t];
+      return `<div><b style="color:${ty.color}">${cnt(t)}</b>${ty.name.replace('换乘', '')}</div>`;
+    }).join('');
+  }
+  el.xfList.innerHTML = items.map(i => {
+    const ty = XFTY[i.t];
+    return `<div class="xfItem" data-sid="${i.id}" data-nm="${i.n}" title="${i.n} · ${ty.name}${i.b ? '（在建线路）' : ''}：${i.d}">`
+      + `<i style="background:${ty.color}"></i><span class="nm">${i.n}</span>`
+      + (i.b ? '<span class="bld">在建</span>' : '')
+      + `<span class="ln">${i.l}</span></div>`;
+  }).join('');
+}
+function locateStation(sid) {
+  const st = App.stations.get(sid);
+  if (!st) return;
+  App.cam.x = st.x; App.cam.y = st.y;
+  App.cam.s = Math.max(App.cam.s, 46);
+  App.hover = sid; App.dirty = true;
+}
+
 /* ---------------- 初始化 ---------------- */
 function init() {
   buildWorld();
@@ -4740,6 +5074,15 @@ function init() {
   fitCity();
   renderLineList();
   renderChallenges();
+  renderXfers();
+  if (el.xfList) {
+    el.xfList.addEventListener('click', ev => {
+      const it = ev.target.closest && ev.target.closest('.xfItem');
+      if (!it) return;
+      locateStation(it.dataset.sid);
+      toast(`定位到 ${it.dataset.nm}`);
+    });
+  }
   if (el.eventLog) {
     const inBuild = App.lines.filter(l => BUILDING_IDS.includes(l.id)).length;
     el.eventLog.innerHTML = `<b>系统就绪</b> · 线上 ${App.lines.length} 条线路` + (inBuild ? ` · ${inBuild} 条在建` : '');

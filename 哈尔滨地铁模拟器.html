@@ -225,15 +225,32 @@ select:focus{border-color:var(--accent)}
   padding:7px 11px;border-radius:9px;backdrop-filter:blur(8px)}
 .legend span{display:flex;align-items:center;gap:5px}
 .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+/* 换乘方式面板 */
+.xfStats{display:grid;grid-template-columns:repeat(auto-fit,minmax(50px,1fr));gap:5px;margin-bottom:8px}
+.xfStats div{background:rgba(255,255,255,.035);border:1px solid var(--stroke);border-radius:7px;
+  padding:5px 4px;text-align:center;font-size:9.5px;color:var(--dim);letter-spacing:.3px}
+.xfStats b{display:block;font-family:var(--mono);font-size:14px;font-weight:600;line-height:1.25;margin-top:1px}
+.xfList{max-height:232px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding-right:2px}
+.xfItem{display:flex;align-items:center;gap:6px;padding:4px 5px;border-radius:6px;font-size:11px;
+  color:var(--muted);cursor:pointer;transition:background .12s}
+.xfItem:hover{background:rgba(77,163,255,.12);color:#fff}
+.xfItem i{width:7px;height:7px;border-radius:50%;flex:none}
+.xfItem .nm{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xfItem .ln{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.3px}
+.xfItem .bld{font-size:9px;color:#ffb545;border:1px solid rgba(255,181,69,.4);border-radius:3px;padding:0 3px}
 .tooltip{position:absolute;pointer-events:none;z-index:10;opacity:0;transition:opacity .12s;
   background:rgba(9,16,28,.95);border:1px solid rgba(77,163,255,.4);border-radius:9px;padding:9px 11px;
-  font-size:11.5px;min-width:170px;box-shadow:0 10px 30px rgba(0,0,0,.5);backdrop-filter:blur(10px)}
+  font-size:11.5px;min-width:170px;max-width:300px;box-shadow:0 10px 30px rgba(0,0,0,.5);backdrop-filter:blur(10px)}
 .tooltip.show{opacity:1}
 .tooltip .tt{font-size:13px;font-weight:700;margin-bottom:2px;display:flex;align-items:center;gap:7px}
 .tooltip .tt i{width:8px;height:8px;border-radius:50%}
 .tooltip .tl{color:var(--dim);font-size:10.5px;letter-spacing:.4px;margin-bottom:6px}
 .tooltip .tr{display:flex;justify-content:space-between;gap:14px;color:var(--muted);line-height:1.7}
 .tooltip .tr b{font-family:var(--mono);color:var(--text);font-weight:500}
+.tooltip .xfRow{margin-top:5px;padding-top:5px;border-top:1px dashed rgba(140,170,205,.22)}
+.tooltip .xfD{margin-top:3px;color:#8fa7c2;font-size:10.5px;line-height:1.55;white-space:normal}
+.tooltip b .xfB{font-style:normal;font-size:9.5px;color:#ffb545;border:1px solid rgba(255,181,69,.45);
+  border-radius:4px;padding:0 4px;margin-left:5px;vertical-align:1px}
 
 /* 底部条 */
 footer{height:42px;flex:0 0 42px;display:flex;align-items:center;gap:12px;padding:0 16px;
@@ -436,6 +453,13 @@ body.mode-chart .chartTools{display:flex}
         </div>
       </div>
 
+      <!-- 换乘方式 -->
+      <div class="block">
+        <h2>换乘方式 / TRANSFERS <span class="badge" id="xfBadge">—</span></h2>
+        <div class="xfStats" id="xfStats"></div>
+        <div class="xfList" id="xfList"></div>
+      </div>
+
       <!-- 任务 -->
       <div class="block">
         <h2>挑战任务 / CHALLENGES</h2>
@@ -496,7 +520,11 @@ body.mode-chart .chartTools{display:flex}
         <span><i style="background:#3ad99b"></i>畅通</span>
         <span><i style="background:#ffb545"></i>拥挤</span>
         <span><i style="background:#ff5f74"></i>爆满</span>
-        <span>◦ 换乘站</span>
+        <span><i style="background:#ffc247"></i>同台</span>
+        <span><i style="background:#28d7c0"></i>节点</span>
+        <span><i style="background:#4da3ff"></i>通道</span>
+        <span><i style="background:#c08cff"></i>虚拟</span>
+        <span>（换乘站方式）</span>
         <span>▬ 列车</span> <span style="color:#7d8999">◯ 环线</span>
       </div>
       <div class="zoomBox">
@@ -823,7 +851,7 @@ function buildWorld() {
     for (const name of def.stations) {
       let st = App.stations.get(name);
       if (!st) {
-        const c = COORD[name] || [118.79, 32.04];
+        const c = COORD[name] || [LNG0, LAT0];
         st = {
           id: name, name,
           lng: c[0], lat: c[1],
@@ -2025,7 +2053,10 @@ function drawLines() {
     const tk = off ? null : trackOf(line.id);
     const paths = [];
     const useTrack = !!tk && mainMatchesDef(line);
-    if (useTrack) paths.push({ pts: tk.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY)), tk: true });
+    if (useTrack) {
+      const segs = (typeof TRACK_SEG !== 'undefined' && TRACK_SEG[line.id]) ? TRACK_SEG[line.id] : [tk];
+      for (const seg of segs) paths.push({ pts: seg.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY)), tk: true });
+    }
     for (let ai = useTrack ? 1 : 0; ai < arms.length; ai++) {
       const arm = arms[ai];
       if (arm.stations.length < 2) continue;
@@ -2126,6 +2157,7 @@ function drawLines() {
 function drawStations() {
   const sim = App.sim;
   const s = App.cam.s;
+  const termSet = terminalSet();
   const transitR = Math.max(4.0, Math.min(7.8, s * 0.31));
   const tinyR = Math.max(2.1, Math.min(4.7, s * 0.2));
 
@@ -2160,12 +2192,29 @@ function drawStations() {
       ctx.lineWidth = 1.4;
       ctx.stroke();
     } else if (isTrans) {
+      const xf = (typeof XFER !== 'undefined') ? XFER[st.name] : undefined;
+      const xcol = (xf && typeof XFER_TYPES !== 'undefined' && XFER_TYPES[xf.t]) ? XFER_TYPES[xf.t].color : '#8aa6c4';
       ctx.fillStyle = '#f2f8ff';
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(p.x, p.y, r * 0.42, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, r * 0.46, 0, Math.PI * 2);
       ctx.fillStyle = '#0b1524';
       ctx.fill();
+      // 换乘方式标记环：外圈按方式着色（虚拟换乘用虚线）
+      ctx.save();
+      ctx.strokeStyle = xcol;
+      ctx.lineWidth = Math.max(1, Math.min(1.9, r * 0.24));
+      if (xf && xf.t === 'virtual') { ctx.setLineDash([r * 0.55, r * 0.5]); }
+      ctx.beginPath(); ctx.arc(p.x, p.y, r + 1.3, 0, Math.PI * 2); ctx.stroke();
+      if (xf && xf.t === 'same' && xf.b !== 1) {
+        // 同台换乘：环外加两枚对向小箭头刻度
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(p.x - r - 4.2, p.y); ctx.lineTo(p.x - r - 1.4, p.y - 2.6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p.x - r - 4.2, p.y); ctx.lineTo(p.x - r - 1.4, p.y + 2.6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p.x + r + 4.2, p.y); ctx.lineTo(p.x + r + 1.4, p.y - 2.6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p.x + r + 4.2, p.y); ctx.lineTo(p.x + r + 1.4, p.y + 2.6); ctx.stroke();
+      }
+      ctx.restore();
       ctx.strokeStyle = 'rgba(10,20,35,0.65)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
@@ -2177,6 +2226,12 @@ function drawStations() {
     if (st.custom) {
       ctx.strokeStyle = '#28d7c0'; ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.arc(p.x, p.y, r + 2.5, 0, Math.PI * 2); ctx.stroke();
+    }
+    // 线路端点（首站 / 末站）：外加一圈白色细环，与中途站区分
+    if (termSet.has(id) && st.lines.length > 0) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.62)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r + 2.6, 0, Math.PI * 2); ctx.stroke();
     }
   }
 
@@ -2235,51 +2290,84 @@ function drawTrains() {
 
 /* ---------- 站名 ---------- */
 const labelBoxes = [];
-function placeLabel(x, y, w, h) {
+function placeLabel(x, y, w, h, maxHit) {
+  let hit = 0;
   for (const r of labelBoxes) {
-    if (!(x > r.x + r.w || x + w < r.x || y > r.y + r.h || y + h < r.y)) return false;
+    if (!(x > r.x + r.w || x + w < r.x || y > r.y + r.h || y + h < r.y)) {
+      if (++hit > (maxHit || 0)) return false;
+    }
   }
   labelBoxes.push({ x, y, w, h });
   return true;
 }
+/* 每条运营线（含支线）的首末站：这些站必须始终标出站名 */
+function terminalSet() {
+  const T = new Set();
+  for (const l of App.lines) {
+    for (const arm of lineArms(l)) {
+      const st = arm.stations;
+      if (!st || st.length === 0) continue;
+      T.add(st[0]);
+      T.add(st[st.length - 1]);
+    }
+  }
+  return T;
+}
+
 function drawLabels() {
   labelBoxes.length = 0;
   const s = App.cam.s;
-  if (s < 7) return;
+  if (s < 4.2) return;
   const font = s > 22 ? 11.5 : s > 15 ? 10.5 : 10;
   ctx.font = `500 ${font}px "Segoe UI","Microsoft YaHei"`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
+  const TERM = terminalSet();
   const priority = [];
   for (const [id, st] of App.stations) {
     const trans = st.lines.length > 1;
     const sel = App.selectedLine && st.lines.includes(App.selectedLine);
-    if (!trans && !sel) {
-      if (s < 22) continue;
-      if (s < 28 && st.w < 0.86) continue;
+    const term = TERM.has(id) && st.lines.length > 0;
+    if (!trans && !sel && !term) {
+      if (s < 11) continue;
+      if (s < 26 && st.w < 0.62) continue;
     }
-    priority.push({ st, trans, sel });
+    priority.push({ st, trans, sel, term });
   }
-  priority.sort((a, b) => (b.trans - a.trans) || (b.sel - a.sel) || (b.st.w - a.st.w));
-  if (priority.length > 150) priority.length = 150;
+  priority.sort((a, b) => (b.trans - a.trans) || (b.term - a.term) || (b.sel - a.sel) || (b.st.w - a.st.w));
+  if (priority.length > 200) {
+    // 端点与换乘站不截断
+    const keep = priority.filter(p => p.term || p.trans);
+    const rest = priority.filter(p => !p.term && !p.trans).slice(0, Math.max(0, 200 - keep.length));
+    priority.length = 0;
+    priority.push(...keep, ...rest);
+  }
 
-  for (const { st, trans } of priority) {
+  for (const { st, trans, term } of priority) {
     const p = w2s(st.x, st.y);
-    if (p.x < 6 || p.x > W - 6 || p.y < 10 || p.y > H - 10) continue;
+    if (p.x < -8 || p.x > W + 8 || p.y < -8 || p.y > H + 8) continue;
+    ctx.font = `${term ? 700 : 500} ${term ? font + 0.5 : font}px "Segoe UI","Microsoft YaHei"`;
     const tw = ctx.measureText(st.name).width;
-    const cands = trans
+    // 端点靠边时优先朝画面内侧排字
+    const edge = [];
+    if (p.x > W - 130) edge.push([-9, -10, 'right'], [-9, 12, 'right']);
+    else if (p.x < 130) edge.push([9, -10, 'left'], [9, 12, 'left']);
+    if (p.y < 60) edge.push([0, 20, 'center'], [9, 16, 'left'], [-9, 16, 'right']);
+    else if (p.y > H - 60) edge.push([0, -18, 'center'], [9, -16, 'left'], [-9, -16, 'right']);
+    const base = trans
       ? [[9, -10, 'left'], [-9, -10, 'right'], [9, 12, 'left'], [-9, 12, 'right'], [0, -17, 'center']]
       : [[7, -10, 'left'], [-7, -10, 'right'], [7, 12, 'left'], [-7, 12, 'right']];
+    const cands = edge.concat(base);
     for (const [dx, dy, al] of cands) {
       ctx.textAlign = al;
       const tx = p.x + dx, ty = p.y + dy;
       const x0 = al === 'left' ? tx : al === 'right' ? tx - tw : tx - tw / 2;
-      if (!placeLabel(x0 - 2, ty - font * 0.72, tw + 4, font * 1.35)) continue;
+      if (!placeLabel(x0 - 4, ty - font * 0.8, tw + 8, font * 1.62, term ? 1 : 0)) continue;
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(5,10,18,0.85)';
+      ctx.strokeStyle = 'rgba(5,10,18,0.88)';
       ctx.strokeText(st.name, tx, ty);
-      ctx.fillStyle = trans ? '#eaf3ff' : 'rgba(198,216,238,0.88)';
+      ctx.fillStyle = term ? '#ffffff' : trans ? '#eaf3ff' : 'rgba(190,208,230,0.78)';
       ctx.fillText(st.name, tx, ty);
       break;
     }
@@ -2374,9 +2462,37 @@ function fitView(padding = 34) {
 }
 
 function fitCity() {
-  const v = (typeof GEO !== 'undefined' && GEO.cityView) || { x: 49.0, y: 65.0, s: 17.2 };
+  const hasView = (typeof GEO !== 'undefined' && GEO.cityView);
+  if (!hasView) { fitView(48); return; }
+  const v = GEO.cityView;
   App.cam.x = v.x; App.cam.y = v.y; App.cam.s = v.s;
   App.dirty = true;
+  if (App.stations.size === 0) return;
+  // 端点（首末站）若被裁到画外：小幅平移视野把首末站捞回画面，不改变缩放
+  const terms = [];
+  for (const id of terminalSet()) { const st = App.stations.get(id); if (st) terms.push(st); }
+  if (!terms.length) return;
+  let sx0 = 1e9, sx1 = -1e9, sy0 = 1e9, sy1 = -1e9;
+  for (const st of terms) {
+    const px = (st.x - App.cam.x) * v.s + W / 2;
+    const py = (st.y - App.cam.y) * v.s + H / 2;
+    if (px < sx0) sx0 = px; if (px > sx1) sx1 = px;
+    if (py < sy0) sy0 = py; if (py > sy1) sy1 = py;
+  }
+  const padL = 330, padR = 40, padT = 46, padB = 70;
+  let dX = 0, dY = 0;
+  if (sx0 < padL && sx1 < W - padR) dX = Math.min(padL - sx0, (W - padR) - sx1);
+  else if (sx1 > W - padR && sx0 > padL) dX = -Math.min(sx1 - (W - padR), sx0 - padL);
+  else if (sx0 < padL) dX = Math.min((W - padR) - sx1 > 0 ? (W - padR - sx1) / 2 : 0, padL - sx0);
+  if (sy0 < padT && sy1 < H - padB) dY = Math.min(padT - sy0, (H - padB) - sy1);
+  else if (sy1 > H - padB && sy0 > padT) dY = -Math.min(sy1 - (H - padB), sy0 - padT);
+  dX = Math.max(-220, Math.min(220, dX));
+  dY = Math.max(-180, Math.min(180, dY));
+  if (dX || dY) {
+    App.cam.x -= dX / v.s;
+    App.cam.y -= dY / v.s;
+    App.dirty = true;
+  }
 }
 
 function zoomAt(sx, sy, factor) {
@@ -3216,7 +3332,8 @@ const el = {
   modePill: $('modePill'), modePillText: $('modePillText'), netPill: $('netPill'),
   tooltip: $('tooltip'), eventLog: $('eventLog'),
   tlFill: $('tlFill'), tlMark: $('tlMark'), footPlay: $('footPlay'), tlRange: $('tlRange'),
-  challengeList: $('challengeList'), modal: $('modal'), toast: $('toast')
+  challengeList: $('challengeList'), modal: $('modal'), toast: $('toast'),
+  xfStats: $('xfStats'), xfList: $('xfList'), xfBadge: $('xfBadge')
 };
 
 /* ---------------- 模式 ---------------- */
@@ -3301,6 +3418,7 @@ function renderLineList() {
   el.netBadge.textContent = `${ns.lines} 线 / ${ns.stations} 站`;
   el.netPill.textContent = `${ns.lines} 条线 · ${ns.stations} 站 · ${Math.round(ns.km)} km`;
   updateNetStat();
+  if (typeof renderXfers === 'function') { try { renderXfers(); } catch (e) {} }
 }
 function rankOf(l) {
   const order = ['L1','L2','L3','L4','L5','L6','L7','L9','L10','L11','S1','S2','S3','S4','S5','S6','S7','S8','S9'];
@@ -3324,7 +3442,10 @@ function renderDetail() {
   el.dtChip.textContent = line.short;
   el.dtChip.style.background = line.color;
   el.dtName.textContent = line.name;
-  el.dtSub.textContent = `${uniqueCount(line)} 站` + (lineArms(line).length > 1 ? ` · ${lineArms(line).length} 臂` : '');
+  const arm0 = lineArms(line)[0] || { stations: [] };
+  const firstSt = arm0.stations[0] || '', lastSt = arm0.stations[arm0.stations.length - 1] || '';
+  el.dtSub.textContent = (firstSt && lastSt ? `${firstSt} ⇄ ${lastSt} · ` : '')
+    + `${uniqueCount(line)} 站` + (lineArms(line).length > 1 ? ` · ${lineArms(line).length} 臂` : '');
   el.dtHeadway.value = line.headway;
   el.dtSpeed.value = line.speed;
   el.dtCap.value = line.cap;
@@ -3850,6 +3971,16 @@ function updateHover(x, y) {
     return l ? `<span style="color:${l.color};font-weight:600">${l.name}</span>` : '';
   }).filter(Boolean).join('、') || '<span style="color:#5d738f">未接入任何线路</span>';
   let rows = `<div class="tr"><span>车站权重</span><b>${(st.w * 100).toFixed(0)}</b></div>`;
+  const XFDB = (typeof XFER !== 'undefined') ? XFER : null;
+  const XFTY = (typeof XFER_TYPES !== 'undefined') ? XFER_TYPES : null;
+  const xf = XFDB ? XFDB[st.name] : undefined;
+  let xferHtml = '';
+  if (xf && XFTY && XFTY[xf.t]) {
+    const ty = XFTY[xf.t];
+    xferHtml = `<div class="tr xfRow"><span>换乘方式</span><b style="color:${ty.color}">${ty.name}${xf.b ? '<i class="xfB">在建</i>' : ''}</b></div>
+      <div class="tr"><span>换乘线路</span><b>${xf.l}</b></div>
+      <div class="xfD">${xf.d}${xf.m ? '<br>' + xf.m.join('<br>') : ''}</div>`;
+  }
   if (sim) {
     rows += `<div class="tr"><span>站台等待</span><b style="color:${ss && ss.queue > 300 ? '#ff5f74' : '#e9f1ff'}">${ss ? ss.queue : 0} 人</b></div>
              <div class="tr"><span>今日上车</span><b>${ss ? ss.board : 0}</b></div>`;
@@ -3857,6 +3988,7 @@ function updateHover(x, y) {
   el.tooltip.innerHTML = `
     <div class="tt"><i style="background:${st.lines.length ? getLine(st.lines[0]).color : '#5d738f'}"></i>${st.name}</div>
     <div class="tl">${linesHtml}</div>
+    ${xferHtml}
     ${rows}
     ${st.custom ? '<div class="tr" style="margin-top:4px;color:#28d7c0"><span>规划新建车站</span></div>' : ''}`;
   el.tooltip.classList.add('show');
@@ -4372,6 +4504,53 @@ function startAutoSave() {
   window.addEventListener('beforeunload', () => saveNow(true));
 }
 
+/* ---------------- 换乘方式面板 ---------------- */
+const XFER_ORDER = ['same', 'node', 'pass', 'virtual', 'newx'];
+function renderXfers() {
+  if (!el.xfList) return;
+  const XFDB = (typeof XFER !== 'undefined') ? XFER : {};
+  const XFTY = (typeof XFER_TYPES !== 'undefined' && XFER_TYPES) ? XFER_TYPES : {
+    same: { name: '同台换乘', color: '#ffc247' }, node: { name: '节点换乘', color: '#28d7c0' },
+    pass: { name: '通道换乘', color: '#4da3ff' }, virtual: { name: '虚拟换乘', color: '#c08cff' },
+    newx: { name: '规划换乘', color: '#8fa3bb' }
+  };
+  const items = [];
+  for (const [id, st] of App.stations) {
+    if (!st.lines || st.lines.length < 2) continue;
+    const xf = XFDB[st.name];
+    const shortOf = x => { const L = getLine(x); return L ? L.short : x; };
+    items.push({
+      id, n: st.name, t: xf ? xf.t : 'newx',
+      l: xf ? xf.l : st.lines.map(shortOf).join('·'),
+      b: !!(xf && xf.b), d: xf ? xf.d : '规划线网新增换乘站'
+    });
+  }
+  items.sort((a, b) => XFER_ORDER.indexOf(a.t) - XFER_ORDER.indexOf(b.t)
+    || b.b - a.b || a.n.localeCompare(b.n, 'zh'));
+  const cnt = t => items.filter(i => i.t === t).length;
+  if (el.xfBadge) el.xfBadge.textContent = items.length + ' 站';
+  if (el.xfStats) {
+    el.xfStats.innerHTML = XFER_ORDER.filter(t => cnt(t) > 0).map(t => {
+      const ty = XFTY[t];
+      return `<div><b style="color:${ty.color}">${cnt(t)}</b>${ty.name.replace('换乘', '')}</div>`;
+    }).join('');
+  }
+  el.xfList.innerHTML = items.map(i => {
+    const ty = XFTY[i.t];
+    return `<div class="xfItem" data-sid="${i.id}" data-nm="${i.n}" title="${i.n} · ${ty.name}${i.b ? '（在建线路）' : ''}：${i.d}">`
+      + `<i style="background:${ty.color}"></i><span class="nm">${i.n}</span>`
+      + (i.b ? '<span class="bld">在建</span>' : '')
+      + `<span class="ln">${i.l}</span></div>`;
+  }).join('');
+}
+function locateStation(sid) {
+  const st = App.stations.get(sid);
+  if (!st) return;
+  App.cam.x = st.x; App.cam.y = st.y;
+  App.cam.s = Math.max(App.cam.s, 46);
+  App.hover = sid; App.dirty = true;
+}
+
 /* ---------------- 初始化 ---------------- */
 function init() {
   buildWorld();
@@ -4387,6 +4566,15 @@ function init() {
   fitCity();
   renderLineList();
   renderChallenges();
+  renderXfers();
+  if (el.xfList) {
+    el.xfList.addEventListener('click', ev => {
+      const it = ev.target.closest && ev.target.closest('.xfItem');
+      if (!it) return;
+      locateStation(it.dataset.sid);
+      toast(`定位到 ${it.dataset.nm}`);
+    });
+  }
   if (el.eventLog) {
     const inBuild = App.lines.filter(l => BUILDING_IDS.includes(l.id)).length;
     el.eventLog.innerHTML = `<b>系统就绪</b> · 线上 ${App.lines.length} 条线路` + (inBuild ? ` · ${inBuild} 条在建` : '');

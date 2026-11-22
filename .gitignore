@@ -1,4 +1,6 @@
 /_chart_test.html
+/_bak_长三角_*.html
+/_probe*.html
 /_geo_cache.json
 /_geo_nom.json
 /_geo_osm.json
@@ -25,3 +27,6 @@
 /f1.png
 /f2.png
 /f3.png
+/fixui.js
+/probe1.html
+/长三角地铁模拟器_沪宁苏锡常通杭绍甬.html

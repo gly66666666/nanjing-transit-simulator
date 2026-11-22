@@ -3,99 +3,122 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="试玩八个城市的地铁模拟器和长三角六城联动版，规划线路并运行客流仿真。">
-  <title>地铁线网实验室</title>
+  <meta name="description" content="选择城市或区域线网，规划线路并运行客流仿真。">
+  <title>地铁线网实验室 · 中国城市合集</title>
   <style>
-    :root {
-      color-scheme: dark;
-      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
-      background: #080f1c;
-      color: #edf4ff;
-    }
+    :root { color-scheme: dark; font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; background: #080f1c; color: #edf4ff; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: radial-gradient(ellipse at 20% 0%, #173253, transparent 52rem);
-    }
-    main { width: min(100%, 960px); margin: 0 auto; padding: clamp(36px, 8vw, 88px) 24px 44px; }
-    h1, h2, p { margin: 0; }
-    h1 { font-size: clamp(2.25rem, 7vw, 4rem); letter-spacing: -.04em; line-height: 1.12; }
-    h2 { font-size: 1.25rem; }
-    .intro, .region p, .save-note { color: #adc0d8; line-height: 1.65; }
-    .intro { margin-top: 14px; }
-    .region, .city-list a {
-      color: inherit;
-      text-decoration: none;
-      border: 1px solid #2d4563;
-      border-radius: 12px;
-    }
-    .region {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 20px;
-      margin: 32px 0;
-      padding: 24px;
-      border-left: 4px solid #50d9c4;
-      background: #112b39;
-    }
-    .region h2 { font-size: 1.45rem; }
-    .region p { margin-top: 6px; }
-    .region .action { color: #76ecda; font-weight: 700; white-space: nowrap; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at 20% 0%, #173253, transparent 52rem); }
+    main { width: min(100%, 1080px); margin: 0 auto; padding: clamp(32px, 7vw, 76px) 24px 52px; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(2.1rem, 6vw, 3.6rem); letter-spacing: -.035em; line-height: 1.12; }
+    h2 { font-size: 1.1rem; margin: 34px 0 12px; color: #76ecda; letter-spacing: .06em; }
+    .intro { color: #adc0d8; line-height: 1.7; margin-top: 14px; max-width: 62ch; }
+    .region, .city-card { color: inherit; text-decoration: none; border: 1px solid #2d4563; border-radius: 12px; }
+    .grid.region-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+    .region { display: flex; flex-direction: column; gap: 5px; height: 100%; padding: 13px 15px; border-left: 3px solid #50d9c4; background: #112b39; }
+    .region span { color: #adc0d8; font-size: .8rem; line-height: 1.5; }
     .region:hover { border-color: #76ecda; background: #163647; }
-    .city-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
-      gap: 12px;
-      margin: 14px 0 0;
-      padding: 0;
-      list-style: none;
-    }
-    .city-list a {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 64px;
-      padding: 14px 18px;
-      background: #122035;
-      font-weight: 650;
-    }
-    .city-list a span { color: #86bdff; }
-    .city-list a:hover { border-color: #86bdff; background: #1a3050; }
-    a:focus-visible { outline: 2px solid #86bdff; outline-offset: 4px; }
-    .save-note { margin-top: 26px; font-size: .875rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 168px), 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .city-card { display: flex; flex-direction: column; gap: 4px; padding: 13px 15px; background: #122035; }
+    .city-card strong { font-weight: 650; }
+    .city-card span { color: #86bdff; font-size: .8rem; }
+    .city-card:hover { border-color: #86bdff; background: #1a3050; }
+    a:focus-visible { outline: 2px solid #86bdff; outline-offset: 3px; }
+    .note { color: #93a8c2; font-size: .85rem; line-height: 1.7; margin-top: 30px; border-top: 1px solid #1e3550; padding-top: 18px; }
   </style>
 </head>
 <body>
   <main>
-    <h1>地铁线网实验室</h1>
-    <p class="intro">选择城市，规划地铁线路、调整运力并模拟早高峰。</p>
+    <h1>地铁线网实验室 · 中国城市</h1>
+    <p class="intro">选择城市或区域，规划地铁线路、调整运力并模拟早高峰。</p>
+    <h2>区域与城际</h2>
+    <ul class="grid region-grid">
+      <li><a class="region" href="./长三角六城地铁模拟器.html"><strong>长三角六城联动</strong><span>南京、常州、无锡、苏州、上海和南通。</span></a></li>
+      <li><a class="region" href="./长三角地铁模拟器.html"><strong>长三角联动</strong><span>包含南通、芜湖和杭绍甬城际。</span></a></li>
+      <li><a class="region" href="./大长三角地铁模拟器.html"><strong>大长三角</strong><span>包含合肥、芜湖等十座城市。</span></a></li>
+      <li><a class="region" href="./杭绍甬三城地铁模拟器.html"><strong>杭绍甬三城</strong><span>同图查看杭州、绍兴和宁波线网。</span></a></li>
+      <li><a class="region" href="./杭绍甬城际地铁模拟器.html"><strong>杭绍甬城际</strong><span>独立查看杭绍甬城际线路。</span></a></li>
+      <li><a class="region" href="./大湾区地铁总图.html"><strong>大湾区地铁总图</strong><span>广州、佛山、东莞、深圳、香港、澳门及广东城际。</span></a></li>
+      <li><a class="region" href="./广东城际地铁模拟器.html"><strong>广东城际</strong><span>独立查看广东城际线路。</span></a></li>
+    </ul>
 
-    <a class="region" href="./长三角六城地铁模拟器.html">
-      <div>
-        <h2>长三角六城联动</h2>
-        <p>在同一张地图上查看南京、常州、无锡、苏州、上海和南通。</p>
-      </div>
-      <span class="action">进入六城版 <span aria-hidden="true">→</span></span>
-    </a>
+    <h2>华北</h2>
+    <ul class="grid">
+      <li><a class="city-card" href="./北京地铁模拟器.html"><strong>北京</strong><span>27 条线 · 418 站</span></a></li>
+      <li><a class="city-card" href="./天津地铁模拟器.html"><strong>天津</strong><span>13 条线 · 229 站</span></a></li>
+      <li><a class="city-card" href="./石家庄地铁模拟器.html"><strong>石家庄</strong><span>3 条线 · 60 站</span></a></li>
+      <li><a class="city-card" href="./太原地铁模拟器.html"><strong>太原</strong><span>2 条线 · 45 站</span></a></li>
+      <li><a class="city-card" href="./呼和浩特地铁模拟器.html"><strong>呼和浩特</strong><span>2 条线 · 43 站</span></a></li>
+    </ul>
 
-    <nav aria-labelledby="city-heading">
-      <h2 id="city-heading">单城模拟</h2>
-      <ul class="city-list">
-        <li><a href="./南京地铁模拟器.html">南京 <span aria-hidden="true">→</span></a></li>
-        <li><a href="./常州地铁模拟器.html">常州 <span aria-hidden="true">→</span></a></li>
-        <li><a href="./无锡地铁模拟器.html">无锡 <span aria-hidden="true">→</span></a></li>
-        <li><a href="./苏州地铁模拟器.html">苏州 <span aria-hidden="true">→</span></a></li>
-        <li><a href="./上海地铁模拟器.html">上海 <span aria-hidden="true">→</span></a></li>
-        <li><a href="./南通地铁模拟器.html">南通 <span aria-hidden="true">→</span></a></li>
-        <li><a href="./徐州地铁模拟器.html">徐州 <span aria-hidden="true">→</span></a></li>
-        <li><a href="./哈尔滨地铁模拟器.html">哈尔滨 <span aria-hidden="true">→</span></a></li>
-      </ul>
-    </nav>
+    <h2>东北</h2>
+    <ul class="grid">
+      <li><a class="city-card" href="./哈尔滨地铁模拟器.html"><strong>哈尔滨</strong><span>3 条线 · 73 站</span></a></li>
+      <li><a class="city-card" href="./长春地铁模拟器.html"><strong>长春</strong><span>9 条线 · 145 站</span></a></li>
+      <li><a class="city-card" href="./沈阳地铁模拟器.html"><strong>沈阳</strong><span>8 条线 · 164 站</span></a></li>
+      <li><a class="city-card" href="./大连地铁模拟器.html"><strong>大连</strong><span>7 条线 · 116 站</span></a></li>
+    </ul>
 
-    <p class="save-note">建议用电脑浏览器。每个版本独立自动保存规划，下次用同一个浏览器打开即可继续。</p>
+    <h2>华东</h2>
+    <ul class="grid">
+      <li><a class="city-card" href="./南京地铁模拟器.html"><strong>南京</strong><span>19 条线 · 326 站</span></a></li>
+      <li><a class="city-card" href="./无锡地铁模拟器.html"><strong>无锡</strong><span>9 条线 · 136 站</span></a></li>
+      <li><a class="city-card" href="./常州地铁模拟器.html"><strong>常州</strong><span>2 条线 · 43 站</span></a></li>
+      <li><a class="city-card" href="./苏州地铁模拟器.html"><strong>苏州</strong><span>9 条线 · 252 站</span></a></li>
+      <li><a class="city-card" href="./上海地铁模拟器.html"><strong>上海</strong><span>19 条线 · 408 站</span></a></li>
+      <li><a class="city-card" href="./南通地铁模拟器.html"><strong>南通</strong><span>2 条线 · 43 站</span></a></li>
+      <li><a class="city-card" href="./徐州地铁模拟器.html"><strong>徐州</strong><span>6 条线 · 100 站</span></a></li>
+      <li><a class="city-card" href="./杭州地铁模拟器.html"><strong>杭州</strong><span>13 条线 · 262 站</span></a></li>
+      <li><a class="city-card" href="./宁波地铁模拟器.html"><strong>宁波</strong><span>9 条线 · 179 站</span></a></li>
+      <li><a class="city-card" href="./温州地铁模拟器.html"><strong>温州</strong><span>2 条线 · 36 站</span></a></li>
+      <li><a class="city-card" href="./绍兴地铁模拟器.html"><strong>绍兴</strong><span>2 条线 · 41 站</span></a></li>
+      <li><a class="city-card" href="./金华地铁模拟器.html"><strong>金华</strong><span>2 条线 · 28 站</span></a></li>
+      <li><a class="city-card" href="./台州地铁模拟器.html"><strong>台州</strong><span>1 条线 · 15 站</span></a></li>
+      <li><a class="city-card" href="./合肥地铁模拟器.html"><strong>合肥</strong><span>8 条线 · 188 站</span></a></li>
+      <li><a class="city-card" href="./芜湖地铁模拟器.html"><strong>芜湖</strong><span>2 条线 · 35 站</span></a></li>
+      <li><a class="city-card" href="./福州地铁模拟器.html"><strong>福州</strong><span>6 条线 · 99 站</span></a></li>
+      <li><a class="city-card" href="./厦门地铁模拟器.html"><strong>厦门</strong><span>5 条线 · 92 站</span></a></li>
+      <li><a class="city-card" href="./南昌地铁模拟器.html"><strong>南昌</strong><span>4 条线 · 104 站</span></a></li>
+      <li><a class="city-card" href="./济南地铁模拟器.html"><strong>济南</strong><span>7 条线 · 122 站</span></a></li>
+      <li><a class="city-card" href="./青岛地铁模拟器.html"><strong>青岛</strong><span>9 条线 · 188 站</span></a></li>
+    </ul>
+
+    <h2>华中</h2>
+    <ul class="grid">
+      <li><a class="city-card" href="./郑州地铁模拟器.html"><strong>郑州</strong><span>13 条线 · 230 站</span></a></li>
+      <li><a class="city-card" href="./洛阳地铁模拟器.html"><strong>洛阳</strong><span>2 条线 · 33 站</span></a></li>
+      <li><a class="city-card" href="./武汉地铁模拟器.html"><strong>武汉</strong><span>16 条线 · 353 站</span></a></li>
+      <li><a class="city-card" href="./长沙地铁模拟器.html"><strong>长沙</strong><span>7 条线 · 155 站</span></a></li>
+    </ul>
+
+    <h2>华南</h2>
+    <ul class="grid">
+      <li><a class="city-card" href="./广州地铁模拟器.html"><strong>广州</strong><span>26 条线 · 363 站</span></a></li>
+      <li><a class="city-card" href="./深圳地铁模拟器.html"><strong>深圳</strong><span>17 条线 · 372 站</span></a></li>
+      <li><a class="city-card" href="./佛山地铁模拟器.html"><strong>佛山</strong><span>4 条线 · 87 站</span></a></li>
+      <li><a class="city-card" href="./东莞地铁模拟器.html"><strong>东莞</strong><span>3 条线 · 46 站</span></a></li>
+      <li><a class="city-card" href="./香港地铁模拟器.html"><strong>香港</strong><span>21 条线 · 216 站</span></a></li>
+      <li><a class="city-card" href="./澳门地铁模拟器.html"><strong>澳门</strong><span>3 条线 · 15 站</span></a></li>
+      <li><a class="city-card" href="./南宁地铁模拟器.html"><strong>南宁</strong><span>5 条线 · 95 站</span></a></li>
+    </ul>
+
+    <h2>西南</h2>
+    <ul class="grid">
+      <li><a class="city-card" href="./重庆地铁模拟器.html"><strong>重庆</strong><span>15 条线 · 279 站</span></a></li>
+      <li><a class="city-card" href="./成都地铁模拟器.html"><strong>成都</strong><span>18 条线 · 375 站</span></a></li>
+      <li><a class="city-card" href="./贵阳地铁模拟器.html"><strong>贵阳</strong><span>3 条线 · 64 站</span></a></li>
+      <li><a class="city-card" href="./昆明地铁模拟器.html"><strong>昆明</strong><span>6 条线 · 103 站</span></a></li>
+    </ul>
+
+    <h2>西北</h2>
+    <ul class="grid">
+      <li><a class="city-card" href="./西安地铁模拟器.html"><strong>西安</strong><span>14 条线 · 270 站</span></a></li>
+      <li><a class="city-card" href="./兰州地铁模拟器.html"><strong>兰州</strong><span>2 条线 · 26 站</span></a></li>
+      <li><a class="city-card" href="./乌鲁木齐地铁模拟器.html"><strong>乌鲁木齐</strong><span>2 条线 · 30 站</span></a></li>
+    </ul>
+
+    <p class="note">共 47 个单城版、7 个区域与城际版。各版本在当前浏览器中独立保存规划，建议用电脑浏览器试玩。</p>
   </main>
 </body>
 </html>

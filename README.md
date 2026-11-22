@@ -1,12 +1,20 @@
 # 地铁线网实验室
 
-[在线试玩](https://gly66666666.github.io/nanjing-transit-simulator/)
-
 在浏览器里规划地铁线路和站点，查看线网拓扑图，运行列车与客流仿真。
 
-- **单城模拟**覆盖南京、常州、无锡、苏州、上海、南通、徐州和哈尔滨。
-- **长三角六城联动**可在同一张地图上查看南京、常州、无锡、苏州、上海和南通。
+[在线试玩](https://gly66666666.github.io/nanjing-transit-simulator/)
 
-建议用电脑浏览器。下载仓库后可直接打开 `index.html` 选择版本，无需安装依赖。各版本会在当前浏览器中独立保存规划。
+## 内容
 
-部分站点与轨道数据来自 [OpenStreetMap 贡献者](https://www.openstreetmap.org/copyright)，适用 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/)。苏州和哈尔滨单城版的站点坐标参考 Wikidata 和中文维基百科。
+- **47 个单城版**按地理区域分组，包括北京、上海、南京、广州、香港和澳门。
+- **7 个区域与城际版**包括长三角六城联动、长三角联动、大长三角、杭绍甬三城、杭绍甬城际、大湾区地铁总图和广东城际。
+
+## 数据来源
+
+部分线路的站序、站点坐标、轨道几何和颜色来自 [OpenStreetMap 贡献者](https://www.openstreetmap.org/copyright)，相关地图数据适用 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/)。
+
+苏州、哈尔滨等版本的站点坐标也参考 Wikidata 和中文维基百科。首页的线路和站点数量以各版本载入的默认线网为准。
+
+## 使用
+
+建议用电脑浏览器（Chrome / Edge）。下载仓库后直接双击 `index.html` 选择版本，无需安装依赖，也不需要联网。每个城市版本会在当前浏览器中独立保存规划，下次用同一个浏览器打开可继续。
