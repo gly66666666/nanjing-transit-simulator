@@ -3513,7 +3513,8 @@ function loadSave() {
 }
 
 function clearSave() {
-  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  // 保留空值，重置后不再回读旧的共用存档。
+  try { localStorage.setItem(SAVE_KEY, ''); } catch (e) {}
   try { lastSnapStr = JSON.stringify(snapshot()); } catch (e) { lastSnapStr = ''; }
   const badge = document.getElementById('hudSave');
   if (badge) { badge.textContent = '—'; badge.className = 'v'; }
