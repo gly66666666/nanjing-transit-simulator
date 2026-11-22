@@ -1528,8 +1528,7 @@ function drawStations() {
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
     } else {
-      ctx.fillStyle = colors.station;
-      ctx.fill();
+      MetroMap.fillOrdinaryStation(ctx, colors, r);
     }
 
     if (st.custom) {

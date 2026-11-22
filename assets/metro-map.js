@@ -21,6 +21,7 @@ const MetroMap = (() => {
     orphan: 'rgba(150,185,225,0.10)',
     orphanEdge: 'rgba(160,195,232,0.9)',
     station: '#dfe9f8',
+    stationEdge: null,
     transferRing: '#f2f8ff',
     transferCenter: '#0b1524',
     transferEdge: 'rgba(10,20,35,0.65)',
@@ -53,11 +54,12 @@ const MetroMap = (() => {
     darkLineEdge: 'rgba(255,255,255,0.88)',
     constructionGap: '#edf3f9',
     orphan: 'rgba(70,101,134,0.10)',
-    orphanEdge: '#52718f',
-    station: '#ffffff',
+    orphanEdge: '#42617f',
+    station: '#c5daee',
+    stationEdge: '#294761',
     transferRing: '#ffffff',
     transferCenter: '#273d55',
-    transferEdge: 'rgba(39,61,85,0.75)',
+    transferEdge: '#294761',
     terminalRing: 'rgba(39,61,85,0.7)',
     labelHalo: 'rgba(255,255,255,0.96)',
     labelTerminal: '#142941',
@@ -70,6 +72,16 @@ const MetroMap = (() => {
 
   function palette() {
     return document.documentElement.dataset.theme === 'light' ? light : dark;
+  }
+
+  function fillOrdinaryStation(context, colors, radius) {
+    context.fillStyle = colors.station;
+    context.fill();
+    if (colors.stationEdge) {
+      context.strokeStyle = colors.stationEdge;
+      context.lineWidth = Math.min(1.35, radius * 0.7);
+      context.stroke();
+    }
   }
 
   function isPlannedArm(stations, definition, index) {
@@ -129,5 +141,5 @@ const MetroMap = (() => {
     return { x, y, angle: angle + (reverse ? Math.PI : 0) };
   }
 
-  return { palette, isPlannedArm, tracePlannedPath, trainPose };
+  return { palette, fillOrdinaryStation, isPlannedArm, tracePlannedPath, trainPose };
 })();
