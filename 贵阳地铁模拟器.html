@@ -392,6 +392,7 @@ const LINE_DEFS = [
     stations: ['皂角坝','贵安','大科城','数谷大道','星月湖','大龙井','天河潭','石板哨','金竹','中曹司','锦江路','小河','望城坡'] },
 ];
 
+
 const GEO = {"rivers":[{"pts":[[106.57208,26.40476],[106.57394,26.40955],[106.57895,26.41306],[106.57658,26.41884],[106.58078,26.42258],[106.59017,26.42587],[106.58824,26.43076],[106.59261,26.43456],[106.59277,26.43802],[106.603,26.44767],[106.61118,26.44952],[106.6227,26.44422],[106.63042,26.44408],[106.64004,26.44005],[106.64422,26.43578]],"w":0.32,"label":"南明河","lx":106.58078,"ly":26.42258,"rot":0}],"riverLabels":[],"lakes":[{"name":"黔灵湖","pts":[[106.68184,26.60562],[106.68398,26.60144],[106.68257,26.59954],[106.68626,26.60042],[106.68293,26.60492],[106.68331,26.60944],[106.68184,26.60562]]},{"name":"观山湖","pts":[[106.62774,26.64294],[106.62938,26.63719],[106.63106,26.63936],[106.62913,26.64016],[106.63091,26.64597],[106.62873,26.64781],[106.62774,26.64294]]}],"hills":[{"name":"黔灵山","ele":0,"pts":[[106.66669639999999,26.5906415],[106.6766964,26.5776415],[106.6866964,26.5906415],[106.6766964,26.603641500000002],[106.66669639999999,26.5906415]]},{"name":"东山","x":106.73,"y":26.58,"rx":0.01,"ry":0.008}],"regions":[],"meta":"GUIYANG   M E T R O   N E T W O R K   M A P"};
 
 const TRACK = {
@@ -421,8 +422,27 @@ const COST_LINE_OPEN = 9.0;
 const DEMAND_BASE = 0.0075;
 const SAVE_KEY = 'metro_lab_save_v1:贵阳';
 const LEGACY_SAVE_KEY = 'njmetro_lab_save_v1';
+
+(function(){ // __endpointCleanup
+  function __d(a,b){var r=Math.PI/180,dl=(b[1]-a[1])*r,dn=(b[0]-a[0])*r;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dn/2)*Math.sin(dn/2);return 6371000*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+  for(var i=0;i<LINE_DEFS.length;i++){
+    var d=LINE_DEFS[i], st=d.stations||[];
+    if(!st.length) continue;
+    var a=typeof COORD!=='undefined'?COORD[st[0]]:null, b=typeof COORD!=='undefined'?COORD[st[st.length-1]]:null;
+    var tr=(typeof TRACK!=='undefined')?TRACK[d.id]:null;
+    var sg=(typeof TRACK_SEG!=='undefined')?TRACK_SEG[d.id]:null;
+    if(tr && tr.length && a && b && (__d(a,tr[0])>150 || __d(b,tr[tr.length-1])>150 || (sg&&sg.length>1))){
+      try{delete TRACK[d.id];}catch(e){}
+      try{delete TRACK_SEG[d.id];}catch(e){}
+    } else if(!tr && sg && sg.length>1){ try{delete TRACK_SEG[d.id];}catch(e){} }
+    if(d.arms){ for(var j=0;j<d.arms.length;j++){
+      var as=(d.arms[j]&&d.arms[j].stations)||(Array.isArray(d.arms[j])?d.arms[j]:[]);
+      if(as.length>1 && !st.includes(as[0]) && st.includes(as[as.length-1])){ d.arms[j]={stations:as.slice().reverse()}; }
+    }}
+  }
+})();
 </script>
-<script src="assets/metro-map.js?v=3"></script>
-<script src="assets/sim-core-city.js?v=4"></script>
+<script src="assets/metro-map.js?v=4"></script>
+<script src="assets/sim-core-city.js?v=5"></script>
 </body>
 </html>

@@ -141,5 +141,14 @@ const MetroMap = (() => {
     return { x, y, angle: angle + (reverse ? Math.PI : 0) };
   }
 
-  return { palette, fillOrdinaryStation, isPlannedArm, tracePlannedPath, trainPose };
+  function writeNetworkSave(storage, key, record) {
+    let old;
+    try { old = JSON.parse(storage.getItem(key)); } catch {}
+    if (typeof old?.sig === 'string' && old.snap && (old.sig !== record.sig || old.ver !== record.ver)) {
+      const backupKey = key + ':backup:' + old.ver + ':' + old.sig;
+      if (storage.getItem(backupKey) === null) storage.setItem(backupKey, JSON.stringify(old));
+    }
+    storage.setItem(key, JSON.stringify(record));
+  }
+  return { palette, fillOrdinaryStation, isPlannedArm, tracePlannedPath, trainPose, writeNetworkSave };
 })();

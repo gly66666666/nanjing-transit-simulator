@@ -93,6 +93,28 @@ function buildWorld() {
       pax: 0, peakLoad: 0, fleet: 0, ontime: 0, late: 0, depTimer: 0
     });
   }
+  /* 分叉支线站台：arms 中独立于主线的站点也要建站 */
+  for (const def of LINE_DEFS) {
+    if (!def.arms) continue;
+    for (const arm of def.arms) {
+      for (const name of (arm.stations || [])) {
+        if (!COORD[name]) continue;
+        let st = App.stations.get(name);
+        if (!st) {
+          const c = COORD[name];
+          st = {
+            id: name, name,
+            lng: c[0], lat: c[1],
+            x: (c[0] - LNG0) * KX, y: (LAT0 - c[1]) * KY,
+            w: WEIGHT[name] || 0.45,
+            lines: [], custom: false, boardings: 0, alightings: 0
+          };
+          App.stations.set(name, st);
+        }
+        if (!st.lines.includes(def.id)) st.lines.push(def.id);
+      }
+    }
+  }
   /* 分叉支线初始化 */
   for (const d0 of LINE_DEFS) {
     if (!d0.arms || !d0.arms.length) continue;
@@ -3801,7 +3823,7 @@ function saveNow(force) {
   try { snapStr = JSON.stringify(snapshot()); } catch (e) { return; }
   if (!force && snapStr === lastSnapStr) return;
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ ver: SAVE_VER, sig: DATA_SIG, t: Date.now(), snap: JSON.parse(snapStr), track: App.trackOff || {} }));
+    MetroMap.writeNetworkSave(localStorage, SAVE_KEY, { ver: SAVE_VER, sig: DATA_SIG, t: Date.now(), snap: JSON.parse(snapStr), track: App.trackOff || {} });
     lastSnapStr = snapStr;
     if (badge) {
       const d = new Date();

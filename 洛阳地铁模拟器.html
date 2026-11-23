@@ -326,6 +326,7 @@ const LINE_DEFS = [
     stations: ['二乔路','邙岭','国花路','洛阳火车','纱厂路','解放路','牡丹桥','文博园','隋唐园','体育中心','市民之家','开元湖','兴洛湖','龙门高铁','八里堂'] },
 ];
 
+
 const GEO = {"rivers":[{"pts":[[112.58819,34.70985],[112.57772,34.7116],[112.57225,34.70941],[112.5656,34.70073],[112.55711,34.69785],[112.55373,34.6909],[112.54263,34.68632],[112.53566,34.68661],[112.52526,34.68397],[112.51377,34.67937],[112.5042,34.67244],[112.49435,34.67238],[112.48797,34.66915],[112.46143,34.66835],[112.42125,34.64247],[112.39801,34.61498],[112.38402,34.60576],[112.37968,34.60032],[112.36246,34.59374],[112.32884,34.57038],[112.31997,34.56955],[112.31175,34.56379],[112.30185,34.56218],[112.29621,34.55675]],"w":0.32,"label":"洛河","lx":112.49098,"ly":34.6708,"rot":0},{"pts":[[112.47235,34.55853],[112.48582,34.58661],[112.49295,34.59209],[112.49348,34.59474],[112.49961,34.6005],[112.50435,34.61392]],"w":0.32,"label":"伊河","lx":112.48657,"ly":34.58713,"rot":0}],"riverLabels":[],"lakes":[],"hills":[{"name":"龙门山","x":112.47,"y":34.55,"rx":0.02,"ry":0.015},{"name":"邙山","x":112.45,"y":34.76,"rx":0.05,"ry":0.02}],"regions":[],"meta":"LUOYANG   M E T R O   N E T W O R K   M A P"};
 
 const TRACK = {
@@ -353,8 +354,27 @@ const COST_LINE_OPEN = 9.0;
 const DEMAND_BASE = 0.0075;
 const SAVE_KEY = 'metro_lab_save_v1:洛阳';
 const LEGACY_SAVE_KEY = 'njmetro_lab_save_v1';
+
+(function(){ // __endpointCleanup
+  function __d(a,b){var r=Math.PI/180,dl=(b[1]-a[1])*r,dn=(b[0]-a[0])*r;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dn/2)*Math.sin(dn/2);return 6371000*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+  for(var i=0;i<LINE_DEFS.length;i++){
+    var d=LINE_DEFS[i], st=d.stations||[];
+    if(!st.length) continue;
+    var a=typeof COORD!=='undefined'?COORD[st[0]]:null, b=typeof COORD!=='undefined'?COORD[st[st.length-1]]:null;
+    var tr=(typeof TRACK!=='undefined')?TRACK[d.id]:null;
+    var sg=(typeof TRACK_SEG!=='undefined')?TRACK_SEG[d.id]:null;
+    if(tr && tr.length && a && b && (__d(a,tr[0])>150 || __d(b,tr[tr.length-1])>150 || (sg&&sg.length>1))){
+      try{delete TRACK[d.id];}catch(e){}
+      try{delete TRACK_SEG[d.id];}catch(e){}
+    } else if(!tr && sg && sg.length>1){ try{delete TRACK_SEG[d.id];}catch(e){} }
+    if(d.arms){ for(var j=0;j<d.arms.length;j++){
+      var as=(d.arms[j]&&d.arms[j].stations)||(Array.isArray(d.arms[j])?d.arms[j]:[]);
+      if(as.length>1 && !st.includes(as[0]) && st.includes(as[as.length-1])){ d.arms[j]={stations:as.slice().reverse()}; }
+    }}
+  }
+})();
 </script>
-<script src="assets/metro-map.js?v=3"></script>
-<script src="assets/sim-core-city.js?v=4"></script>
+<script src="assets/metro-map.js?v=4"></script>
+<script src="assets/sim-core-city.js?v=5"></script>
 </body>
 </html>

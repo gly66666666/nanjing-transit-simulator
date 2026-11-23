@@ -384,6 +384,7 @@ const LINE_DEFS = [
     stations: ['西三庄','高柱','柏林庄','市庄','市二中','新百广场','东里','槐安桥','西三教','石家庄','汇通路','孙村','塔冢','东王','南王','位同','东二环南路','西仰陵','中仰陵','南豆','太行南大街','乐乡'] },
 ];
 
+
 const GEO = {"rivers":[{"pts":[[114.69487,38.10002],[114.68678,38.10213],[114.67492,38.09757],[114.6624,38.10111],[114.65822,38.10041],[114.65199,38.10429],[114.63183,38.10596],[114.62601,38.10914],[114.59115,38.1094],[114.57644,38.11528],[114.5658,38.11561],[114.55193,38.11953],[114.54921,38.12222],[114.53975,38.12421],[114.51056,38.14027],[114.48234,38.16358],[114.44672,38.18551],[114.44232,38.19094],[114.4382,38.19175]],"w":0.32,"label":"滹沱河","lx":114.59115,"ly":38.1094,"rot":0},{"pts":[[114.43146,38.06185],[114.44471,38.04878]],"w":0.32,"label":"民心河","lx":114.43566,"ly":38.05825,"rot":0}],"riverLabels":[],"lakes":[{"name":"岗南水库","x":113.95,"y":38.25,"rx":0.03,"ry":0.02}],"hills":[{"name":"抱犊寨","x":114.25,"y":38.1,"rx":0.015,"ry":0.012}],"regions":[],"meta":"SHIJIAZHUANG   M E T R O   N E T W O R K   M A P"};
 
 const TRACK = {
@@ -413,8 +414,27 @@ const COST_LINE_OPEN = 9.0;
 const DEMAND_BASE = 0.0075;
 const SAVE_KEY = 'metro_lab_save_v1:石家庄';
 const LEGACY_SAVE_KEY = 'njmetro_lab_save_v1';
+
+(function(){ // __endpointCleanup
+  function __d(a,b){var r=Math.PI/180,dl=(b[1]-a[1])*r,dn=(b[0]-a[0])*r;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dn/2)*Math.sin(dn/2);return 6371000*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+  for(var i=0;i<LINE_DEFS.length;i++){
+    var d=LINE_DEFS[i], st=d.stations||[];
+    if(!st.length) continue;
+    var a=typeof COORD!=='undefined'?COORD[st[0]]:null, b=typeof COORD!=='undefined'?COORD[st[st.length-1]]:null;
+    var tr=(typeof TRACK!=='undefined')?TRACK[d.id]:null;
+    var sg=(typeof TRACK_SEG!=='undefined')?TRACK_SEG[d.id]:null;
+    if(tr && tr.length && a && b && (__d(a,tr[0])>150 || __d(b,tr[tr.length-1])>150 || (sg&&sg.length>1))){
+      try{delete TRACK[d.id];}catch(e){}
+      try{delete TRACK_SEG[d.id];}catch(e){}
+    } else if(!tr && sg && sg.length>1){ try{delete TRACK_SEG[d.id];}catch(e){} }
+    if(d.arms){ for(var j=0;j<d.arms.length;j++){
+      var as=(d.arms[j]&&d.arms[j].stations)||(Array.isArray(d.arms[j])?d.arms[j]:[]);
+      if(as.length>1 && !st.includes(as[0]) && st.includes(as[as.length-1])){ d.arms[j]={stations:as.slice().reverse()}; }
+    }}
+  }
+})();
 </script>
-<script src="assets/metro-map.js?v=3"></script>
-<script src="assets/sim-core-city.js?v=4"></script>
+<script src="assets/metro-map.js?v=4"></script>
+<script src="assets/sim-core-city.js?v=5"></script>
 </body>
 </html>

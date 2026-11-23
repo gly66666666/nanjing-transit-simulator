@@ -791,6 +791,7 @@ const LINE_DEFS = [
     stations: ['长安路北','港区北','文体中心','枣园','翱翔路','新郑机场','遵大路','苑陵故城西','洵美路','龙王','龙王南','双鹤湖北','双鹤湖','双鹤湖南','八千','双庙李','大周','颍川路','葛天源','永和路','农大路','体育中心','电气谷','芙蓉湖','鹿鸣湖','许昌东'] },
 ];
 
+
 const GEO = {"rivers":[{"pts":[[113.55989,34.9531],[113.5926,34.94093],[113.61701,34.93734],[113.62494,34.92888],[113.64442,34.92084],[113.67076,34.92133],[113.68781,34.92443],[113.694,34.9219],[113.70143,34.91259],[113.71425,34.9107],[113.72311,34.91144],[113.73753,34.91857],[113.75492,34.91854],[113.761,34.9158],[113.79066,34.88715],[113.80214,34.88181],[113.81675,34.88035],[113.82932,34.88136],[113.85605,34.88818],[113.86426,34.89193],[113.87992,34.90337],[113.88655,34.90561],[113.90327,34.90504],[113.93811,34.89529],[113.95492,34.89691],[113.96085,34.90043],[113.96526,34.90726],[113.97411,34.94328],[113.98303,34.94721],[113.99668,34.9457]],"w":1,"label":"黄河","lx":113.7583,"ly":34.91736,"rot":0},{"pts":[[113.56987,34.69514],[113.56978,34.69698],[113.56605,34.69754],[113.56571,34.70113],[113.55806,34.7069],[113.56426,34.71355],[113.56545,34.72186],[113.56955,34.72541],[113.56924,34.73099],[113.57129,34.73452],[113.56982,34.73762]],"w":0.32,"label":"贾鲁河","lx":113.5632,"ly":34.71239,"rot":0},{"pts":[[113.61234,34.71873],[113.61545,34.72124],[113.61947,34.73838],[113.6299,34.74555],[113.63892,34.74798],[113.64733,34.76197]],"w":0.32,"label":"金水河","lx":113.62964,"ly":34.74541,"rot":0}],"riverLabels":[],"lakes":[{"name":"如意湖","pts":[[113.71813,34.77475],[113.72012,34.77193],[113.72248,34.77249],[113.72187,34.77434],[113.71813,34.77475]]}],"hills":[{"name":"邙山","x":113.6,"y":34.9,"rx":0.05,"ry":0.02}],"regions":[],"meta":"ZHENGZHOU   M E T R O   N E T W O R K   M A P"};
 
 const TRACK = {
@@ -840,8 +841,27 @@ const COST_LINE_OPEN = 9.0;
 const DEMAND_BASE = 0.0075;
 const SAVE_KEY = 'metro_lab_save_v1:郑州';
 const LEGACY_SAVE_KEY = 'njmetro_lab_save_v1';
+
+(function(){ // __endpointCleanup
+  function __d(a,b){var r=Math.PI/180,dl=(b[1]-a[1])*r,dn=(b[0]-a[0])*r;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dn/2)*Math.sin(dn/2);return 6371000*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+  for(var i=0;i<LINE_DEFS.length;i++){
+    var d=LINE_DEFS[i], st=d.stations||[];
+    if(!st.length) continue;
+    var a=typeof COORD!=='undefined'?COORD[st[0]]:null, b=typeof COORD!=='undefined'?COORD[st[st.length-1]]:null;
+    var tr=(typeof TRACK!=='undefined')?TRACK[d.id]:null;
+    var sg=(typeof TRACK_SEG!=='undefined')?TRACK_SEG[d.id]:null;
+    if(tr && tr.length && a && b && (__d(a,tr[0])>150 || __d(b,tr[tr.length-1])>150 || (sg&&sg.length>1))){
+      try{delete TRACK[d.id];}catch(e){}
+      try{delete TRACK_SEG[d.id];}catch(e){}
+    } else if(!tr && sg && sg.length>1){ try{delete TRACK_SEG[d.id];}catch(e){} }
+    if(d.arms){ for(var j=0;j<d.arms.length;j++){
+      var as=(d.arms[j]&&d.arms[j].stations)||(Array.isArray(d.arms[j])?d.arms[j]:[]);
+      if(as.length>1 && !st.includes(as[0]) && st.includes(as[as.length-1])){ d.arms[j]={stations:as.slice().reverse()}; }
+    }}
+  }
+})();
 </script>
-<script src="assets/metro-map.js?v=3"></script>
-<script src="assets/sim-core-city.js?v=4"></script>
+<script src="assets/metro-map.js?v=4"></script>
+<script src="assets/sim-core-city.js?v=5"></script>
 </body>
 </html>

@@ -4168,7 +4168,7 @@ function saveNow(force) {
   try { snapStr = JSON.stringify(snapshot()); } catch (e) { return; }
   if (!force && snapStr === lastSnapStr) return;
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ ver: SAVE_VER, sig: DATA_SIG, t: Date.now(), snap: JSON.parse(snapStr), track: App.trackOff || {} }));
+    MetroMap.writeNetworkSave(localStorage, SAVE_KEY, { ver: SAVE_VER, sig: DATA_SIG, t: Date.now(), snap: JSON.parse(snapStr), track: App.trackOff || {} });
     lastSnapStr = snapStr;
     if (badge) {
       const d = new Date();

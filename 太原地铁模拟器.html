@@ -350,6 +350,7 @@ const LINE_DEFS = [
     stations: ['西桥','通达街','康宁街','电子西街','嘉节','龙城公园','龙兴街','晋阳街','南中环','学府街','长风街','王村南街','南内环','体育馆','大南门','开化寺街','府西街','缉虎营','大北门','胜利街','涧河','尖草坪'] },
 ];
 
+
 const GEO = {"rivers":[{"pts":[[112.45441,37.66754],[112.45836,37.66876],[112.46673,37.67913],[112.47289,37.68327],[112.4757,37.68371],[112.49061,37.6776],[112.49956,37.67841],[112.50747,37.68287],[112.5161,37.69802],[112.52702,37.70433],[112.5315,37.71002],[112.54282,37.72907],[112.54024,37.74916],[112.52825,37.77705],[112.53363,37.79067],[112.53446,37.81368],[112.53694,37.82181],[112.53673,37.82713],[112.53029,37.84481],[112.53177,37.88982],[112.52016,37.90286],[112.52085,37.90568],[112.51018,37.92783],[112.50776,37.93919],[112.50304,37.94551],[112.50019,37.95493],[112.49849,37.95528]],"w":0.32,"label":"汾河","lx":112.53307,"ly":37.78938,"rot":0}],"riverLabels":[],"lakes":[{"name":"晋阳湖","pts":[[112.4864,37.76849],[112.4868,37.76164],[112.49085,37.75943],[112.48894,37.75623],[112.50232,37.75335],[112.50284,37.7551],[112.49823,37.75667],[112.50066,37.75963],[112.5095,37.75828],[112.51126,37.75948],[112.50778,37.77092],[112.51019,37.7796],[112.50253,37.78322],[112.49603,37.78367],[112.49069,37.77364],[112.49644,37.77357],[112.48653,37.769],[112.48847,37.76807],[112.4864,37.76849]]},{"name":"晋阳湖","pts":[[112.50318,37.75428],[112.50897,37.75018],[112.50879,37.75755],[112.5046,37.75816],[112.50318,37.75428]]},{"name":"迎泽湖","pts":[[112.55116,37.84951],[112.5536,37.8496],[112.55756,37.8573],[112.55387,37.85668],[112.554,37.85361],[112.5517,37.85294],[112.55116,37.84951]]}],"hills":[{"name":"西山","ele":0,"pts":[[112.57183169999999,37.8600375],[112.5818317,37.8470375],[112.5918317,37.8600375],[112.5818317,37.873037499999995],[112.57183169999999,37.8600375]]},{"name":"天龙山","ele":0,"pts":[[112.3737151,37.7327509],[112.3772091,37.732152],[112.3785371,37.7376216],[112.3756948,37.7365851],[112.376862,37.7353463],[112.3737151,37.7327509]]}],"regions":[],"meta":"TAIYUAN   M E T R O   N E T W O R K   M A P"};
 
 const TRACK = {
@@ -377,8 +378,27 @@ const COST_LINE_OPEN = 9.0;
 const DEMAND_BASE = 0.0075;
 const SAVE_KEY = 'metro_lab_save_v1:太原';
 const LEGACY_SAVE_KEY = 'njmetro_lab_save_v1';
+
+(function(){ // __endpointCleanup
+  function __d(a,b){var r=Math.PI/180,dl=(b[1]-a[1])*r,dn=(b[0]-a[0])*r;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dn/2)*Math.sin(dn/2);return 6371000*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+  for(var i=0;i<LINE_DEFS.length;i++){
+    var d=LINE_DEFS[i], st=d.stations||[];
+    if(!st.length) continue;
+    var a=typeof COORD!=='undefined'?COORD[st[0]]:null, b=typeof COORD!=='undefined'?COORD[st[st.length-1]]:null;
+    var tr=(typeof TRACK!=='undefined')?TRACK[d.id]:null;
+    var sg=(typeof TRACK_SEG!=='undefined')?TRACK_SEG[d.id]:null;
+    if(tr && tr.length && a && b && (__d(a,tr[0])>150 || __d(b,tr[tr.length-1])>150 || (sg&&sg.length>1))){
+      try{delete TRACK[d.id];}catch(e){}
+      try{delete TRACK_SEG[d.id];}catch(e){}
+    } else if(!tr && sg && sg.length>1){ try{delete TRACK_SEG[d.id];}catch(e){} }
+    if(d.arms){ for(var j=0;j<d.arms.length;j++){
+      var as=(d.arms[j]&&d.arms[j].stations)||(Array.isArray(d.arms[j])?d.arms[j]:[]);
+      if(as.length>1 && !st.includes(as[0]) && st.includes(as[as.length-1])){ d.arms[j]={stations:as.slice().reverse()}; }
+    }}
+  }
+})();
 </script>
-<script src="assets/metro-map.js?v=3"></script>
-<script src="assets/sim-core-city.js?v=4"></script>
+<script src="assets/metro-map.js?v=4"></script>
+<script src="assets/sim-core-city.js?v=5"></script>
 </body>
 </html>

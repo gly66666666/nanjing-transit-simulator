@@ -240,7 +240,7 @@ const KY = 111;
 
 const COORD = {
   '陈官营': [103.66002, 36.08724],
-  '奥体��心': [103.67468, 36.09044],
+  '奥体中心': [103.67468, 36.09044],
   '兰州城市学院（省科技馆）': [103.6989, 36.09911],
   '兰州海关': [103.70697, 36.09468],
   '马滩': [103.72476, 36.08314],
@@ -268,7 +268,7 @@ const COORD = {
 
 const WEIGHT = {
   '陈官营': 0.80,
-  '奥体��心': 0.80,
+  '奥体中心': 0.80,
   '兰州城市学院（省科技馆）': 0.80,
   '兰州海关': 0.80,
   '马滩': 0.80,
@@ -308,10 +308,11 @@ const XFER = {
 
 const LINE_DEFS = [
   { id: 'L1', name: '1号线', short: '1', color: '#0080BC', headway: 240, speed: 34, cap: 1200,
-    stations: ['陈官营','奥体��心','兰州城市学院（省科技馆）','兰州海关','马滩','土门墩','兰州西站北广场','西站什字','七里河','小西湖','文化宫','西关','东方红广场','兰州大学','五里铺','省气象局','拱星墩','焦家湾','东岗'] },
+    stations: ['陈官营','奥体中心','兰州城市学院（省科技馆）','兰州海关','马滩','土门墩','兰州西站北广场','西站什字','七里河','小西湖','文化宫','西关','东方红广场','兰州大学','五里铺','省气象局','拱星墩','焦家湾','东岗'] },
   { id: 'L2', name: '2号线', short: '2', color: '#ff0000', headway: 240, speed: 34, cap: 1200,
     stations: ['雁白大桥','均家滩','张苏滩','五里铺','团结新村','红星巷','兰州火车','邮电大楼','东方红广场'] },
 ];
+
 
 const GEO = {"rivers":[{"pts":[[103.61811,36.13865],[103.63836,36.13321],[103.65264,36.12607],[103.65848,36.12175],[103.66248,36.11235],[103.68716,36.09076],[103.70763,36.08244],[103.71251,36.08341],[103.71991,36.09292],[103.72212,36.09315],[103.73802,36.08512],[103.76817,36.08471],[103.78237,36.07442],[103.80684,36.06451],[103.84956,36.06621],[103.85545,36.06976],[103.86367,36.08164],[103.86705,36.08231],[103.90751,36.0679],[103.93116,36.05364],[103.9441,36.05457],[103.95184,36.05185],[103.95726,36.05248]],"w":1,"label":"黄河","lx":103.78237,"ly":36.07442,"rot":0}],"riverLabels":[],"lakes":[],"hills":[{"name":"白塔山","ele":0,"pts":[[103.802944,36.0704872],[103.8072234,36.0660773],[103.815144,36.0661748],[103.8165334,36.0677339],[103.8109423,36.0711007],[103.8086176,36.0748756],[103.802944,36.0704872]]},{"name":"皋兰山","ele":0,"pts":[[103.82611299999999,36.0212831],[103.836113,36.0082831],[103.846113,36.0212831],[103.836113,36.034283099999996],[103.82611299999999,36.0212831]]}],"regions":[],"meta":"LANZHOU   M E T R O   N E T W O R K   M A P"};
 
@@ -340,8 +341,27 @@ const COST_LINE_OPEN = 9.0;
 const DEMAND_BASE = 0.0075;
 const SAVE_KEY = 'metro_lab_save_v1:兰州';
 const LEGACY_SAVE_KEY = 'njmetro_lab_save_v1';
+
+(function(){ // __endpointCleanup
+  function __d(a,b){var r=Math.PI/180,dl=(b[1]-a[1])*r,dn=(b[0]-a[0])*r;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dn/2)*Math.sin(dn/2);return 6371000*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+  for(var i=0;i<LINE_DEFS.length;i++){
+    var d=LINE_DEFS[i], st=d.stations||[];
+    if(!st.length) continue;
+    var a=typeof COORD!=='undefined'?COORD[st[0]]:null, b=typeof COORD!=='undefined'?COORD[st[st.length-1]]:null;
+    var tr=(typeof TRACK!=='undefined')?TRACK[d.id]:null;
+    var sg=(typeof TRACK_SEG!=='undefined')?TRACK_SEG[d.id]:null;
+    if(tr && tr.length && a && b && (__d(a,tr[0])>150 || __d(b,tr[tr.length-1])>150 || (sg&&sg.length>1))){
+      try{delete TRACK[d.id];}catch(e){}
+      try{delete TRACK_SEG[d.id];}catch(e){}
+    } else if(!tr && sg && sg.length>1){ try{delete TRACK_SEG[d.id];}catch(e){} }
+    if(d.arms){ for(var j=0;j<d.arms.length;j++){
+      var as=(d.arms[j]&&d.arms[j].stations)||(Array.isArray(d.arms[j])?d.arms[j]:[]);
+      if(as.length>1 && !st.includes(as[0]) && st.includes(as[as.length-1])){ d.arms[j]={stations:as.slice().reverse()}; }
+    }}
+  }
+})();
 </script>
-<script src="assets/metro-map.js?v=3"></script>
-<script src="assets/sim-core-city.js?v=4"></script>
+<script src="assets/metro-map.js?v=4"></script>
+<script src="assets/sim-core-city.js?v=5"></script>
 </body>
 </html>
