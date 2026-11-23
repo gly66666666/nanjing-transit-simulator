@@ -1240,8 +1240,23 @@ function drawBackground() {
     ctx.textAlign = 'left';
   }
 
-  // 山体
+  // 山体（兼容旧式椭圆与真实多边形）
   for (const hh of GEO.hills) {
+    if (hh.pts && hh.pts.length > 2) {
+      const pts = hh.pts.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (const p of pts) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+      if (x1 < 0 || x0 > W || y1 < 0 || y0 > H) continue;
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.max(10, Math.max(x1 - x0, y1 - y0) / 2);
+      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      rg.addColorStop(0, colors.hill);
+      rg.addColorStop(1, colors.hillEnd);
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.closePath(); ctx.fill();
+      continue;
+    }
     const c = w2s((hh.x - LNG0) * KX, (LAT0 - hh.y) * KY);
     const rx = hh.rx * KX * App.cam.s, ry = hh.ry * KY * App.cam.s;
     if (c.x + rx < 0 || c.x - rx > W || c.y + ry < 0 || c.y - ry > H) continue;
@@ -1254,8 +1269,18 @@ function drawBackground() {
     ctx.restore();
   }
 
-  // 湖泊
+  // 湖泊（兼容旧式椭圆与真实多边形）
   for (const lk of GEO.lakes) {
+    if (lk.pts && lk.pts.length > 2) {
+      const pts = lk.pts.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
+      ctx.fillStyle = colors.lake;
+      ctx.strokeStyle = colors.lakeEdge;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      continue;
+    }
     const c = w2s((lk.x - LNG0) * KX, (LAT0 - lk.y) * KY);
     const rx = lk.rx * KX * App.cam.s, ry = lk.ry * KY * App.cam.s;
     ctx.fillStyle = colors.lake;
@@ -1265,29 +1290,26 @@ function drawBackground() {
     ctx.fill(); ctx.stroke();
   }
 
-  // 江河（多城：GEO.rivers 数组，元素可为点数组或 {pts,w,label,...}；兼容单条 GEO.river）
-  const RIVERS = (GEO.rivers && GEO.rivers.length) ? GEO.rivers : (GEO.river ? [GEO.river] : []);
-  const riverW0 = GEO.riverW || 0.42;
-  const riverOwnLabels = [];
+  // 江河（支持多河：rivers = [{pts, w, label, lx, ly, rot}]；兼容单条 river）
+  const riverList = (GEO.rivers && GEO.rivers.length) ? GEO.rivers
+    : (GEO.river && GEO.river.length ? [{ pts: GEO.river, w: GEO.riverW }] : []);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  for (const rv of RIVERS) {
-    const line = Array.isArray(rv) ? rv : (rv && rv.pts);
-    if (!line || line.length < 2) continue;
-    const wUnit = Array.isArray(rv) ? riverW0 : (rv.w || riverW0);
-    if (!Array.isArray(rv) && rv.label) riverOwnLabels.push(rv);
-    const pts = line.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
-    const rw = Math.max(3, wUnit * App.cam.s);
-    ctx.strokeStyle = colors.riverBank; ctx.lineWidth = rw + Math.max(3, rw * 0.3);
+  for (const rv of riverList) {
+    const arr = Array.isArray(rv) ? rv : (rv.pts || []);
+    if (arr.length < 2) continue;
+    const pts = arr.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
+    const rw = Math.max(3.0, (Array.isArray(rv) ? (GEO.riverW || 1) : (rv.w || GEO.riverW || 1)) * App.cam.s);
+    ctx.strokeStyle = colors.riverBank; ctx.lineWidth = rw + Math.max(2.5, rw * 0.3);
     smoothPath(pts); ctx.stroke();
     ctx.strokeStyle = colors.river; ctx.lineWidth = rw;
     smoothPath(pts); ctx.stroke();
-    ctx.strokeStyle = colors.riverCenter; ctx.lineWidth = Math.max(2, rw * 0.3);
+    ctx.strokeStyle = colors.riverCenter; ctx.lineWidth = Math.max(1.6, rw * 0.3);
     smoothPath(pts); ctx.stroke();
   }
 
   // 江河字样（来自 GEO.riverLabels 与河流对象自带的 label）
   const RLAB = ((GEO.riverLabels && GEO.riverLabels.length) ? GEO.riverLabels.slice() : (GEO.riverLabel ? [GEO.riverLabel] : []))
-    .concat(riverOwnLabels.map(r => ({ lng: r.lx, lat: r.ly, rot: r.rot, text: r.label })));
+    .concat(riverList.filter(r => !Array.isArray(r) && r.label && r.lx != null).map(r => ({ lng: r.lx, lat: r.ly, rot: r.rot, text: r.label })));
   if (App.cam.s > 8) {
     for (const rl of RLAB) {
       if (!rl || !rl.text) continue;

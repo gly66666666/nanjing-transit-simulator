@@ -1250,8 +1250,23 @@ function drawBackground() {
     ctx.textBaseline = 'middle';
   }
 
-  // 山体
+  // 山体（兼容旧式椭圆与真实多边形）
   for (const hh of GEO.hills) {
+    if (hh.pts && hh.pts.length > 2) {
+      const pts = hh.pts.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (const p of pts) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+      if (x1 < 0 || x0 > W || y1 < 0 || y0 > H) continue;
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.max(10, Math.max(x1 - x0, y1 - y0) / 2);
+      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      rg.addColorStop(0, colors.hill);
+      rg.addColorStop(1, colors.hillEnd);
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.closePath(); ctx.fill();
+      continue;
+    }
     const c = w2s((hh.x - LNG0) * KX, (LAT0 - hh.y) * KY);
     const rx = hh.rx * KX * App.cam.s, ry = hh.ry * KY * App.cam.s;
     if (c.x + rx < 0 || c.x - rx > W || c.y + ry < 0 || c.y - ry > H) continue;
@@ -1264,8 +1279,18 @@ function drawBackground() {
     ctx.restore();
   }
 
-  // 湖泊
+  // 湖泊（兼容旧式椭圆与真实多边形）
   for (const lk of GEO.lakes) {
+    if (lk.pts && lk.pts.length > 2) {
+      const pts = lk.pts.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
+      ctx.fillStyle = colors.lake;
+      ctx.strokeStyle = colors.lakeEdge;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      continue;
+    }
     const c = w2s((lk.x - LNG0) * KX, (LAT0 - lk.y) * KY);
     const rx = lk.rx * KX * App.cam.s, ry = lk.ry * KY * App.cam.s;
     ctx.fillStyle = colors.lake;
@@ -1275,27 +1300,37 @@ function drawBackground() {
     ctx.fill(); ctx.stroke();
   }
 
-  // 长江
-  const pts = GEO.river.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
-  const rw = Math.max(5, GEO.riverW * App.cam.s);
+  // 江河（支持多河：rivers = [{pts, w, label, lx, ly, rot}]；兼容单条 river）
+  const riverList = (GEO.rivers && GEO.rivers.length) ? GEO.rivers
+    : (GEO.river && GEO.river.length ? [{ pts: GEO.river, w: GEO.riverW }] : []);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.strokeStyle = colors.riverBank; ctx.lineWidth = rw + Math.max(3, rw * 0.3);
-  smoothPath(pts); ctx.stroke();
-  ctx.strokeStyle = colors.river; ctx.lineWidth = rw;
-  smoothPath(pts); ctx.stroke();
-  ctx.strokeStyle = colors.riverCenter; ctx.lineWidth = Math.max(2, rw * 0.3);
-  smoothPath(pts); ctx.stroke();
+  for (const rv of riverList) {
+    const arr = Array.isArray(rv) ? rv : (rv.pts || []);
+    if (arr.length < 2) continue;
+    const pts = arr.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY));
+    const rw = Math.max(3.0, (Array.isArray(rv) ? (GEO.riverW || 1) : (rv.w || GEO.riverW || 1)) * App.cam.s);
+    ctx.strokeStyle = colors.riverBank; ctx.lineWidth = rw + Math.max(2.5, rw * 0.3);
+    smoothPath(pts); ctx.stroke();
+    ctx.strokeStyle = colors.river; ctx.lineWidth = rw;
+    smoothPath(pts); ctx.stroke();
+    ctx.strokeStyle = colors.riverCenter; ctx.lineWidth = Math.max(1.6, rw * 0.3);
+    smoothPath(pts); ctx.stroke();
+  }
 
-  // 大河字样（默认南京长江，可用 GEO.riverLabel 覆写）
-  const rl = GEO.riverLabel || { lng: 118.900, lat: 32.176, rot: -0.48, text: '长   江' };
+  // 江河字样
+  const riverLabels = [];
+  for (const rv of riverList) if (!Array.isArray(rv) && rv.label && rv.lx != null) riverLabels.push(rv);
+  if (GEO.riverLabel) riverLabels.push({ label: GEO.riverLabel.text, lx: GEO.riverLabel.lng, ly: GEO.riverLabel.lat, rot: GEO.riverLabel.rot });
   if (App.cam.s > 8) {
-    const p = w2s((rl.lng - LNG0) * KX, (LAT0 - rl.lat) * KY);
-    ctx.save();
-    ctx.translate(p.x, p.y); ctx.rotate(rl.rot);
-    ctx.font = '600 14px "Microsoft YaHei","Segoe UI"';
-    ctx.fillStyle = colors.riverName;
-    ctx.fillText(rl.text, 0, 0);
-    ctx.restore();
+    for (const rl of riverLabels) {
+      if (!rl.label) continue;
+      const p = w2s((rl.lx - LNG0) * KX, (LAT0 - rl.ly) * KY);
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(rl.rot || 0);
+      ctx.font = '600 14px "Microsoft YaHei","Segoe UI"';
+      ctx.fillStyle = colors.riverName;
+      ctx.fillText(rl.label, 0, 0);
+      ctx.restore();
+    }
   }
 }
 
@@ -2895,6 +2930,17 @@ function restore(snap) {
   }
   App.lines = snap.lines.map(l => {
     const obj = { ...l, stations: [...l.stations], segs: null, pax: 0, peakLoad: 0, fleet: 0, depTimer: 0 };
+    // 更新内置线路的标识与在建状态，保留存档中的运营设置。
+    if (!l.custom && typeof LINE_DEFS !== 'undefined') {
+      const def = LINE_DEFS.find(d => d.id === l.id);
+      if (def) {
+        obj.color = def.color;
+        obj.name = def.name;
+        obj.short = def.short;
+        obj.bldHead = def.bldHead || 0;
+        obj.bldTail = def.bldTail || 0;
+      }
+    }
     obj.arms = (l.arms && l.arms.length ? l.arms : [{ stations: l.stations }]).map(a => ({ stations: [...a.stations] }));
     obj.arms[0].stations = obj.stations;   // 主干与 line.stations 共用同一数组
     return obj;
