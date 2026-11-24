@@ -2468,7 +2468,17 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
 
   /* --- 格网点阵 --- */
   const cellPx = Chart.cell * s;
-
+  if (cellPx > 9 * k && cellPx < 90 * k) {
+    g.fillStyle = 'rgba(52,86,120,0.055)';
+    const o = px(0, 0);
+    const i0 = Math.floor((sx0 - o.x) / cellPx) - 1, i1 = Math.ceil((sx1 - o.x) / cellPx) + 1;
+    const j0 = Math.floor((sy0 - o.y) / cellPx) - 1, j1 = Math.ceil((sy1 - o.y) / cellPx) + 1;
+    for (let i = i0; i <= i1; i++) {
+      for (let j = j0; j <= j1; j++) {
+        g.fillRect(o.x + i * cellPx, o.y + j * cellPx, 1.4 * k, 1.4 * k);
+      }
+    }
+  }
 
   /* --- 城市分块：淡框 + 城市名（块间留白已由排版保证） --- */
   if (Chart.cityPanels && Chart.cityPanels.length > 1) {
@@ -2491,7 +2501,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
     }
   }
 
-  const lw = Math.max(2.2, Math.min(7.4, cellPx * 0.28));
+  const lw = Math.max(2.4, Math.min(14, cellPx * 0.46)) * k;
   const visible = p => p.x > -70 && p.x < vw + 70 && p.y > -70 && p.y < vh + 70;
 
   /* --- 线路 --- */
@@ -2580,7 +2590,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   }
 
   /* --- 车站符号 --- */
-  const rNorm = Math.max(1.6, lw * 0.44);
+  const rNorm = Math.max(1.6, lw * 0.34);
   for (const st of App.stations.values()) {
     if (overview) continue;
     const cp = Chart.pos.get(st.id);
@@ -2648,10 +2658,10 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   }
 
   /* --- 站名 --- */
-  const fs = cellPx > 52 ? 11.8 : cellPx > 32 ? 10.8 : cellPx > 20 ? 9.8 : 8.0;
+  const fs = cellPx > 34 ? 13.5 : cellPx > 17 ? 12 : cellPx > 11 ? 10.5 : 9;
   const items = [];
   const terminals = new Set();
-  for (const line of App.lines) {
+  for (const line of scopeLines) {
     for (const arm of lineArms(line)) {
       if (arm.hidden) continue;
       if (arm.stations.length < 2) continue;
@@ -2659,8 +2669,9 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
       terminals.add(arm.stations[arm.stations.length - 1]);
     }
   }
-  const showAll = cellPx > 13;
+  const showAll = Chart.exporting || cellPx > 13;
   for (const st of App.stations.values()) {
+    if (overview) continue;
     const cp = Chart.pos.get(st.id);
     if (!cp) continue;
     const trans = st.lines.length > 1;
@@ -2669,23 +2680,27 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   }
   items.sort((a, b) => (b.trans - a.trans) || (b.term - a.term) || (b.st.w - a.st.w));
 
-  const cands = [
-    [1, 0, 'left', 'middle'], [-1, 0, 'right', 'middle'],
-    [0, -1, 'center', 'bottom'], [0, 1, 'center', 'top'],
-    [1, -1, 'left', 'bottom'], [1, 1, 'left', 'top'],
-    [-1, -1, 'right', 'bottom'], [-1, 1, 'right', 'top']
-  ];
+  // 标签候选：三档半径 × 八方位，先近后远，给文字更多落位机会（站名零压线）
+  const cands = [];
+  for (const ring of [1, 1.55, 2.2]) {
+    cands.push(
+      [ring, 0, 'left', 'middle'], [-ring, 0, 'right', 'middle'],
+      [0, -ring, 'center', 'bottom'], [0, ring, 'center', 'top'],
+      [ring, -ring, 'left', 'bottom'], [ring, ring, 'left', 'top'],
+      [-ring, -ring, 'right', 'bottom'], [-ring, ring, 'right', 'top']
+    );
+  }
   const halo = cellPx > 14;
-  const offs = [0, 4 * k, 10 * k];
 
   for (const it of items) {
     const p = px(it.cp.x, it.cp.y);
     if (!visible(p)) continue;
-    g.font = it.trans ? `700 ${Math.round((fs + 0.6) * k)}px ${CHART_FONT}` : `500 ${Math.round(fs * k)}px ${CHART_FONT}`;
+    g.font = it.trans ? `700 ${Math.round((fs + 0.9) * k)}px ${CHART_FONT}`
+      : `500 ${Math.round(fs * k)}px ${CHART_FONT}`;
     const tw = g.measureText(it.st.name).width;
-    const th = (fs + 0.5) * k;
-    const rr = (it.trans ? rNorm * 1.8 : rNorm) + (it.trans ? 3.4 : 3.0) * k;
-
+    const th = (fs + 1) * k;
+    const rr = (it.trans ? rNorm * 1.9 : rNorm) + 4 * k;
+    // 顺着线路走向的方向容易压到线，放到最后再考虑
     const along = new Set();
     for (const lid of it.st.lines) {
       const ln = getLine(lid);
@@ -2702,47 +2717,36 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
         }
       }
     }
-    const ordered = cands.filter(c => !along.has(c[0] + ',' + c[1]))
-      .concat(cands.filter(c => along.has(c[0] + ',' + c[1])));
+    const dirKey = c => Math.sign(c[0]) + ',' + Math.sign(c[1]);
+    const ordered = cands.filter(c => !along.has(dirKey(c)))
+      .concat(cands.filter(c => along.has(dirKey(c))));
 
-    const passes = it.trans || it.term ? [false, true] : [false];
+    // 先在空白处找位置；重点站（换乘/终点）找不到时允许压线（带白色描边）
+    const passes = Chart.exporting || it.trans || it.term ? [false, true] : [false];
     let done = false;
     for (const allowInk of passes) {
       if (done) break;
-      for (const off of offs) {
-        if (done) break;
-        if (allowInk && off > 8 * k) continue;
-        for (const [dx, dy, align, base] of ordered) {
-          const x = dx > 0 ? p.x + rr + off : dx < 0 ? p.x - rr - off - tw : p.x - tw / 2;
-          const y = dy > 0 ? p.y + rr + off : dy < 0 ? p.y - rr - off - th : p.y - th / 2;
-          if (y < area.y0 + 3 * k || y + th > area.y1 - 3 * k) continue;
-          if (x < area.x0 - 2 * k || x + tw > area.x1 + 2 * k) continue;
-          if (!allowInk && !inkFree(x - 1 * k, y - 0.25 * k, tw + 2 * k, th + 0.5 * k)) continue;
-          if (!labelBox(x - 1.4 * k, y - 0.6 * k, tw + 2.8 * k, th + 1.2 * k)) continue;
-
-          if (off > 5 * k && !allowInk) {
-            const ex = dx > 0 ? x : dx < 0 ? x + tw : p.x;
-            const ey = dy > 0 ? y : dy < 0 ? y + th : p.y;
-            g.strokeStyle = 'rgba(60,76,96,0.42)';
-            g.lineWidth = 0.8 * k;
-            g.beginPath();
-            g.moveTo(p.x + dx * (rNorm + 1.5 * k), p.y + dy * (rNorm + 1.5 * k));
-            g.lineTo(ex, ey);
-            g.stroke();
-          }
-
-          g.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
-          g.textBaseline = base === 'top' ? 'top' : base === 'bottom' ? 'bottom' : 'middle';
-          const tx = align === 'left' ? x : align === 'right' ? x + tw : x + tw / 2;
-          const ty = base === 'top' ? y : base === 'bottom' ? y + th : y + th / 2;
-          g.lineWidth = (allowInk ? 2.8 : 2.1) * k;
-          g.strokeStyle = 'rgba(255,255,255,0.97)';
+      for (const [dx, dy, align, base] of ordered) {
+        const ox = dx * rr, oy = dy * rr;
+        const x = align === 'left' ? p.x + ox : align === 'right' ? p.x + ox - tw : p.x + ox - tw / 2;
+        const y = base === 'top' ? p.y + oy : base === 'bottom' ? p.y + oy - th : p.y + oy - th / 2;
+        if (y < area.y0 + 4 * k || y + th > area.y1 - 4 * k) continue;
+        if (x < area.x0 - 2 * k || x + tw > area.x1 + 2 * k) continue;
+        if (!allowInk && !inkFree(x - 1.2 * k, y - 0.8 * k, tw + 2.4 * k, th + 1.6 * k)) continue;
+        if (!labelBox(x - 1.5 * k, y - 1 * k, tw + 3 * k, th + 2 * k)) continue;
+        g.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
+        g.textBaseline = base === 'top' ? 'top' : base === 'bottom' ? 'bottom' : 'middle';
+        const tx = align === 'left' ? x : align === 'right' ? x + tw : x + tw / 2;
+        const ty = base === 'top' ? y : base === 'bottom' ? y + th : y + th / 2;
+        if (halo || allowInk) {
+          g.lineWidth = (allowInk ? 3.4 : 2.4) * k;
+          g.strokeStyle = 'rgba(255,255,255,0.96)';
           g.strokeText(it.st.name, tx, ty);
-          g.fillStyle = it.trans ? '#0d1626' : it.term ? '#182331' : '#2d3a49';
-          g.fillText(it.st.name, tx, ty);
-          done = true;
-          break;
         }
+        g.fillStyle = it.trans ? '#0d1626' : it.term ? '#1c2734' : '#404d5f';
+        g.fillText(it.st.name, tx, ty);
+        done = true;
+        break;
       }
     }
   }
@@ -2781,7 +2785,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   g.fillText(`2026.11 · ${drawOrder.length} 条线 · ${nSt} 座车站`, rx, sy0 + 38 * k);
   g.fillStyle = '#95a0b2';
   g.font = `500 ${Math.round(9 * k)}px ${CHART_FONT}`;
-  g.fillText('运营线路示意图 · 站距经示意化处理', rx, sy0 + 56 * k);
+  g.fillText(`按真实几何自动压缩 · 八方向格网 · 对齐 ${alignPct}%`, rx, sy0 + 56 * k);
 
   /* --- 页脚图例 --- */
   const ly = sy1 - legendBand;
@@ -2848,26 +2852,47 @@ function drawChart() {
 
 /* ---------------- 6. 交互与导出 ---------------- */
 function chartExport() {
-  const k = 2;
-  const vw = Math.round(W * k), vh = Math.round(H * k);
-  const c2 = document.createElement('canvas');
-  c2.width = vw; c2.height = vh;
-  const g2 = c2.getContext('2d');
-  drawChartTo(g2, vw, vh, { x: App.cam.x, y: App.cam.y, s: App.cam.s * k }, k, 0);
-  // 只导出那张“图”，不要深色底板
-  const r = Chart.sheetRect || { x: 0, y: 0, w: vw, h: vh };
-  const x = Math.max(0, Math.round(r.x)), y = Math.max(0, Math.round(r.y));
-  const w = Math.min(vw - x, Math.round(r.w) + 4), h = Math.min(vh - y, Math.round(r.h) + 4);
-  const c3 = document.createElement('canvas');
-  c3.width = w; c3.height = h;
-  const g3 = c3.getContext('2d');
-  g3.fillStyle = '#ffffff';
-  g3.fillRect(0, 0, w, h);
-  g3.drawImage(c2, x, y, w, h, 0, 0, w, h);
-  const a = document.createElement('a');
-  a.download = (document.title.split('·')[0] || '线网').trim() + '线网图.png';
-  a.href = c3.toDataURL('image/png');
-  a.click();
+  if (!Chart.ready || !Chart.pos.size) return false;
+
+  const poster = MetroMap.posterViewport(Chart.pos, App.lines.length, App.stations.size);
+  const source = document.createElement('canvas');
+  source.width = poster.width;
+  source.height = poster.height;
+  const screenRect = Chart.sheetRect;
+  let sheet;
+  Chart.exporting = true;
+  try {
+    drawChartTo(source.getContext('2d'), poster.width, poster.height, poster.camera, poster.k, 0);
+    sheet = Chart.sheetRect;
+  } finally {
+    Chart.exporting = false;
+    Chart.sheetRect = screenRect;
+  }
+  if (!sheet) return false;
+
+  const x = Math.max(0, Math.floor(sheet.x));
+  const y = Math.max(0, Math.floor(sheet.y));
+  const w = Math.min(poster.width - x, Math.ceil(sheet.x + sheet.w) - x);
+  const h = Math.min(poster.height - y, Math.ceil(sheet.y + sheet.h) - y);
+  if (w < 1 || h < 1) return false;
+
+  const image = document.createElement('canvas');
+  image.width = w;
+  image.height = h;
+  image.getContext('2d').drawImage(source, x, y, w, h, 0, 0, w, h);
+  source.width = 0;
+  source.height = 0;
+  const data = image.toDataURL('image/png');
+  image.width = 0;
+  image.height = 0;
+  if (!data.startsWith('data:image/png;base64,')) return false;
+
+  Chart.lastExport = { w, h };
+  const link = document.createElement('a');
+  link.download = (document.title.split('·')[0] || '线网').trim() + '线网图.png';
+  link.href = data;
+  link.click();
+  return true;
 }
 
 (function bindChartUI() {
@@ -2879,7 +2904,7 @@ function chartExport() {
     toast(`拓扑图已重算 · ${Chart.edges} 段`);
   });
   bind('btnChartFit', () => fitChart());
-  bind('btnChartPng', () => { chartExport(); toast('线网图已导出为 PNG'); });
+  bind('btnChartPng', () => { toast(chartExport() ? '高清挂图已导出' : '当前线网还没有可导出的拓扑图'); });
 })();
 
 function renderChartCityBar() {

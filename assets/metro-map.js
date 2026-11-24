@@ -170,5 +170,28 @@ const MetroMap = (() => {
     }
   }
 
-  return { palette, fillOrdinaryStation, isPlannedArm, tracePlannedPath, trainPose, writeNetworkSave, copyArm, restoreServiceArms };
+  function posterViewport(positions, lineCount, stationCount) {
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    for (const { x, y } of positions.values()) {
+      left = Math.min(left, x); right = Math.max(right, x);
+      top = Math.min(top, y); bottom = Math.max(bottom, y);
+    }
+    const spanX = Math.max(1, right - left);
+    const spanY = Math.max(1, bottom - top);
+    const maxSide = 6000;
+    const targetWidth = stationCount > 250 ? 5200 : 3600;
+    const banner = Math.max(112, 28 + 21 * Math.ceil(lineCount / 3));
+    const k = Math.min(2.5, maxSide / (5 * banner));
+    const padX = 64 * k, padY = (banner + 18) * k;
+    const scale = Math.min((targetWidth - 2 * padX) / spanX, (maxSide - 2 * padY) / spanY);
+
+    return {
+      width: Math.ceil(Math.max(850 * k, spanX * scale + 2 * padX)),
+      height: Math.min(maxSide, Math.ceil(spanY * scale + 2 * padY)),
+      camera: { x: (left + right) / 2, y: (top + bottom) / 2, s: scale },
+      k,
+    };
+  }
+
+  return { posterViewport, palette, fillOrdinaryStation, isPlannedArm, tracePlannedPath, trainPose, writeNetworkSave, copyArm, restoreServiceArms };
 })();
