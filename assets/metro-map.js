@@ -150,5 +150,25 @@ const MetroMap = (() => {
     }
     storage.setItem(key, JSON.stringify(record));
   }
-  return { palette, fillOrdinaryStation, isPlannedArm, tracePlannedPath, trainPose, writeNetworkSave };
+  function copyArm(arm) {
+    const route = { stations: [...arm.stations] };
+    if (arm.hidden) Object.assign(route, { hidden: true, name: arm.name, headway: arm.headway });
+    return route;
+  }
+
+  function restoreServiceArms(arms, definition) {
+    const services = definition?.arms?.filter(arm => arm.hidden);
+    if (!services?.length) return;
+    const visibleStations = new Set(arms.filter(arm => !arm.hidden).flatMap(arm => arm.stations));
+    for (const route of services) {
+      if (!route.stations.every(station => visibleStations.has(station))) continue;
+      const existing = arms.findIndex((arm, index) => index > 0 &&
+        arm.stations.length === route.stations.length &&
+        arm.stations.every((station, i) => station === route.stations[i]));
+      if (existing === -1) arms.push(copyArm(route));
+      else arms[existing] = copyArm(route);
+    }
+  }
+
+  return { palette, fillOrdinaryStation, isPlannedArm, tracePlannedPath, trainPose, writeNetworkSave, copyArm, restoreServiceArms };
 })();

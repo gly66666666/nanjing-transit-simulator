@@ -159,10 +159,11 @@
       <div class="player-guide-heading"><h2 id="player-guide-title">玩法指南</h2><button class="player-button">关闭</button></div>
       <ol>
         <li><strong>看线网</strong><span>点线路查看站序、发车间隔和运力。拖动地图平移，用滚轮或加减按钮缩放。</span></li>
-        <li><strong>做规划</strong><span>进入「规划」，可新建线路、建站和画线。改错时用「撤销一步」。</span></li>
+        <li><strong>做规划</strong><span>新建线路后用「画线」依次点地图上的车站即可铺设：点已接入的站可设为接续点，向前 / 向后延伸或从中间分出支线。改错用「撤销一步」。</span></li>
         <li><strong>跑早高峰</strong><span>进入「模拟」，选好时长和客流强度后开始。结束后查看通勤时间和拥堵站台。</span></li>
         <li><strong>看拓扑图</strong><span>进入「拓扑图」，查看示意站序并导出 PNG。</span></li>
       </ol>
+      <p>快捷键：空格键暂停 / 继续仿真，Esc 结束当前画线或关闭弹窗。</p>
       <p>规划进度会自动保存在当前浏览器。也可点击「保存」，下次打开同一版本继续。</p>
     </form>`;
     document.body.append(guide);

@@ -84,7 +84,7 @@ function buildWorld() {
       if (!st.lines.includes(def.id)) st.lines.push(def.id);
       return st;
     };
-    for (const armStations of (def.arms || [])) for (const name of armStations) ensure(name);
+    for (const arm of (def.arms || [])) for (const name of (arm.stations || arm)) ensure(name);
     const ids = [];
     for (const name of def.stations) { ensure(name); ids.push(name); }
     const lineObj = {
@@ -93,7 +93,7 @@ function buildWorld() {
       stations: ids, enabled: true, custom: false, segs: null,
       pax: 0, peakLoad: 0, fleet: 0, ontime: 0, late: 0, depTimer: 0
     };
-    if (def.arms && def.arms.length) lineObj.arms = [{ stations: ids }].concat(def.arms.map(a => ({ stations: a.slice() })));
+    if (def.arms && def.arms.length) lineObj.arms = [{ stations: ids }].concat(def.arms.filter(a => (a.stations || a).length >= 2).map(a => ({ stations: (a.stations || a).slice(), hidden: !!a.hidden, name: a.name || '', headway: a.headway || 0 })));
     App.lines.push(lineObj);
   }
   refreshSegs();
@@ -146,16 +146,17 @@ function refreshSegs() {
       arm.segs = segs;
       arm.runTime = total;
       arm.km = segs.reduce((s, x) => s + x.dist, 0);
-      km += arm.km;
+      if (!arm.hidden) km += arm.km;
     }
     line.segs = arms[0].segs;
     line.runTime = arms[0].runTime;
     line.km = km;
     // 分叉后各臂交替发车：单臂发车间隔 = 全线间隔 × 臂数
     let fleet = 0;
+    const visibleArms = Math.max(1, arms.filter(arm => !arm.hidden && arm.stations.length >= 2).length);
     for (const arm of arms) {
       if (arm.stations.length < 2) continue;
-      const headH = (line.headway * arms.length) / 60;
+      const headH = (arm.hidden && arm.headway ? arm.headway : line.headway * visibleArms) / 60;
       fleet += Math.ceil((2 * arm.runTime + 2 * 1.2) / headH);
     }
     line.fleet = Math.max(fleet, arms.length);
@@ -467,11 +468,11 @@ function startSim(opts) {
 
 function initTrains(line, sim) {
   const arms = lineArms(line);
-  const nArms = Math.max(1, arms.filter(a => a.stations.length >= 2).length);
+  const nArms = Math.max(1, arms.filter(a => !a.hidden && a.stations.length >= 2).length);
   let fleet = 0;
   arms.forEach((arm, ai) => {
     if (arm.stations.length < 2 || !arm.segs || !arm.segs.length) return;
-    const head = (line.headway * nArms) / 60;      // 分叉后各臂交替发车
+    const head = (arm.hidden && arm.headway ? arm.headway : line.headway * nArms) / 60;      // 分叉后各臂交替发车
     const roundTrip = 2 * arm.runTime + 3.2;
     const perDir = Math.max(2, Math.round(roundTrip / head / 2));
     for (let k = 0; k < perDir; k++) {
@@ -1298,6 +1299,7 @@ function drawLines() {
     if (useTrack) paths.push({ pts: tk.map(p => w2s((p[0] - LNG0) * KX, (LAT0 - p[1]) * KY)), planned: false });
     for (let ai = useTrack ? 1 : 0; ai < arms.length; ai++) {
       const arm = arms[ai];
+      if (arm.hidden) continue;
       if (arm.stations.length < 2) continue;
       const pts = arm.stations.map(id => {
         const st = App.stations.get(id);
@@ -1693,6 +1695,7 @@ function chartGraph() {
   };
   for (const line of App.lines) {
     for (const arm of lineArms(line)) {
+      if (arm.hidden) continue;
       const seq = arm.stations;
       const ii = seq.map(id => (idx.has(id) ? idx.get(id) : null));
       for (let k = 0; k < seq.length - 1; k++) {
@@ -1794,7 +1797,8 @@ function chartSolve(nodes, seed) {
         const d1 = octDir(ci - ix[a], cj - iy[a]);
         const d2 = octDir(ix[b] - ci, iy[b] - cj);
         const cos = d1[0] * d2[0] + d1[1] * d2[1];
-        if (cos < 1) c += P.turn * (1 - cos) + (cos < -0.55 ? P.turn * 1.6 : 0);
+        if (cos < 1) c += P.turn * (1 - cos);
+        if (cos < -0.01) c += (P.acute || 0) * 8;
       }
     }
     return c;
@@ -1822,6 +1826,7 @@ function chartSolve(nodes, seed) {
           const d2 = octDir(ix[T[t].n] - ix[i], iy[T[t].n] - iy[i]);
           const cos = d1[0] * d2[0] + d1[1] * d2[1];
           if (cos < 1) { cost += P.turn * (1 - cos); bend++; }
+          if (cos < -0.01) cost += (P.acute || 0) * 8;
         }
       }
     }
@@ -1867,20 +1872,21 @@ function chartSolve(nodes, seed) {
 
   /* 阶段：先松后紧，越往后越看重“像地铁图” */
   const phases = [
-    { P: { wf: 0.10, ill: 8, col: 2, turn: 0, wl: 0.9 }, r: 3, n: 22 },
-    { P: { wf: 0.14, ill: 11, col: 10, turn: 1.0, wl: 1.1 }, r: 3, n: 20 },
-    { P: { wf: 0.20, ill: 15, col: 26, turn: 1.8, wl: 1.3 }, r: 2, n: 18 },
-    { P: { wf: 0.26, ill: 20, col: 40, turn: 2.3, wl: 1.4 }, r: 2, n: 14 },
-    { P: { wf: 0.32, ill: 26, col: 52, turn: 2.7, wl: 1.5 }, r: 1, n: 10 }
+    { P: { wf: 0.10, ill: 8, col: 2, turn: 0, acute: 14, wl: 0.9, diag: 0 }, r: 3, n: 22 },
+    { P: { wf: 0.14, ill: 11, col: 10, turn: 1.0, acute: 20, wl: 1.1, diag: 2 }, r: 3, n: 20 },
+    { P: { wf: 0.20, ill: 15, col: 26, turn: 1.8, acute: 28, wl: 1.3, diag: 3 }, r: 2, n: 18 },
+    { P: { wf: 0.26, ill: 20, col: 40, turn: 2.3, acute: 36, wl: 1.4, diag: 4 }, r: 2, n: 14 },
+    { P: { wf: 0.32, ill: 26, col: 52, turn: 6.0, acute: 60, wl: 1.5, diag: 5 }, r: 1, n: 10 }
   ];
 
   let best = null;
-  for (const ph of phases) {
+  for (let pi = 0; pi < phases.length; pi++) {
+    const ph = phases[pi];
     shuffle();
     for (let t = 0; t < ph.n; t++) sweep(ph.P, ph.r);
     const m = measure(ph.P);
     const score = m.viol * 10 + m.col * 10 + m.cost;
-    if (!best || score < best.score) {
+    if (pi === phases.length - 1 || !best || score < best.score) {
       best = { viol: m.viol, col: m.col, bend: m.bend, cost: m.cost, score,
         ix: Array.from(ix), iy: Array.from(iy) };
     }
@@ -1894,6 +1900,184 @@ function chartSignature() {
   for (const l of App.lines) sig += '#' + l.id + (l.enabled ? '1' : '0') + ':' + lineArms(l).map(a => a.stations.join(',')).join('|');
   for (const st of App.stations.values()) sig += '@' + Math.round(st.x * 40) + ',' + Math.round(st.y * 40);
   return sig;
+}
+
+function chartRdp(pts, tol) {
+  if (pts.length < 3) return [0, pts.length - 1];
+  const a = pts[0], b = pts[pts.length - 1];
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  let far = 0, idx = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = Math.abs(dy * (pts[i].x - a.x) - dx * (pts[i].y - a.y)) / len;
+    if (d > far) { far = d; idx = i; }
+  }
+  if (far > tol) {
+    const l = chartRdp(pts.slice(0, idx + 1), tol);
+    const r = chartRdp(pts.slice(idx), tol).map(k => k + idx);
+    return l.concat(r.slice(1));
+  }
+  return [0, pts.length - 1];
+}
+
+/* 把每条线相邻锚点之间的“楼梯段”拉成一段直线，站距按弧长均匀分配。
+   锚点 = 端点 + 换乘站 + 拉默曼简化后的主要拐点，保证走向不丢失。 */
+function dezigzagChart(G) {
+  const use = new Map();
+  for (const l of App.lines) {
+    if (!l.enabled) continue;
+    for (const arm of lineArms(l)) {
+      if (arm.hidden) continue;
+      for (const id of arm.stations) use.set(id, (use.get(id) || 0) + 1);
+    }
+  }
+  const cell = Chart.cell;
+  for (const l of App.lines) {
+    if (!l.enabled) continue;
+    for (const arm of lineArms(l)) {
+      if (arm.hidden) continue;
+      const ids = arm.stations;
+      if (ids.length < 3) continue;
+      const pts = [];
+      for (const id of ids) {
+        const p = Chart.pos.get(id);
+        if (!p) { pts.length = 0; break; }
+        pts.push({ x: p.x / cell, y: p.y / cell });
+      }
+      if (!pts.length) continue;
+      const anchors = new Set([0, ids.length - 1]);
+      for (let i = 1; i < ids.length - 1; i++) {
+        if ((use.get(ids[i]) || 0) > 1) anchors.add(i);
+      }
+      for (const i of chartRdp(pts, 2.1)) anchors.add(i);
+      const arr = [...anchors].sort((a, b) => a - b);
+      const own = new Set(ids);
+      for (let k = 0; k < arr.length - 1; k++) {
+        const ai = arr[k], bi = arr[k + 1];
+        if (bi - ai < 2) continue;
+        const A = pts[ai], B = pts[bi];
+        for (let t = 1; t < bi - ai; t++) {
+          const q = t / (bi - ai);
+          const nx = A.x + (B.x - A.x) * q;
+          const ny = A.y + (B.y - A.y) * q;
+          let bad = false;
+          for (const [oid, op] of Chart.pos) {
+            if (own.has(oid)) continue;
+            if (Math.hypot(op.x / cell - nx, op.y / cell - ny) < 0.72) { bad = true; break; }
+          }
+          if (!bad) Chart.pos.set(ids[ai + t], { x: nx * cell, y: ny * cell, i: nx, j: ny });
+        }
+      }
+    }
+  }
+}
+
+/* 两条不同线路在同一段走廊上重合时，给它们各自向两侧让开一点，
+   画成并行双线；换乘站圆点仍留在中心，从圆点两侧分叉。 */
+function chartOverlapOffsets() {
+  const segs = [];
+  const rankOf = new Map();
+  App.lines.forEach((l, i) => rankOf.set(l.id, i));
+  for (const l of App.lines) {
+    if (!l.enabled) continue;
+    const arms = lineArms(l);
+    for (let ai = 0; ai < arms.length; ai++) {
+      if (arms[ai].hidden) continue;
+      const ids = arms[ai].stations;
+      for (let i = 0; i < ids.length - 1; i++) {
+        const a = Chart.pos.get(ids[i]), b = Chart.pos.get(ids[i + 1]);
+        if (!a || !b) continue;
+        const ax = a.x / Chart.cell, ay = a.y / Chart.cell;
+        const bx = b.x / Chart.cell, by = b.y / Chart.cell;
+        const len = Math.hypot(bx - ax, by - ay);
+        if (len < 0.25) continue;
+        segs.push({ key: l.id + '|' + ai + '|' + i, line: l.id, color: l.color,
+          ax, ay, bx, by, len, group: new Set([l.id]) });
+      }
+    }
+  }
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      const a = segs[i], b = segs[j];
+      if (a.line === b.line || (a.color && a.color === b.color)) continue;
+      const dx = a.bx - a.ax, dy = a.by - a.ay;
+      const ex = b.bx - b.ax, ey = b.by - b.ay;
+      const cross = Math.abs(dx * ey - dy * ex) / (a.len * b.len);
+      if (cross > 0.035) continue;
+      const p1 = ((b.ax - a.ax) * dx + (b.ay - a.ay) * dy) / (a.len * a.len);
+      const p2 = ((b.bx - a.ax) * dx + (b.by - a.ay) * dy) / (a.len * a.len);
+      const ov = Math.min(1, Math.max(p1, p2)) - Math.max(0, Math.min(p1, p2));
+      if (ov < 0.35) continue;
+      const pd = Math.abs(dy * (b.ax - a.ax) - dx * (b.ay - a.ay)) / a.len;
+      if (pd > 0.38) continue;
+      a.group.add(b.line); b.group.add(a.line);
+    }
+  }
+  const marks = new Map();
+  for (const s of segs) {
+    if (s.group.size < 2) continue;
+    const around = [...s.group].sort((x, y) => (rankOf.get(x) || 0) - (rankOf.get(y) || 0));
+    const rank = around.indexOf(s.line);
+    marks.set(s.key, rank - (around.length - 1) / 2);
+  }
+  return marks;
+}
+
+/* 把“右转90°再左转90°”的方波台阶改成两个更小的转角（约45°+45°）：
+   第一个拐点沿共享边前移，第二个拐点沿出边前移，使中间那段变成斜线。 */
+function smoothJogsChart() {
+  const use = new Map();
+  for (const l of App.lines) {
+    if (!l.enabled) continue;
+    for (const arm of lineArms(l).filter(arm => !arm.hidden)) for (const id of arm.stations) use.set(id, (use.get(id) || 0) + 1);
+  }
+  const cell = Chart.cell;
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = 0;
+    for (const l of App.lines) {
+      if (!l.enabled) continue;
+      for (const arm of lineArms(l)) {
+        if (arm.hidden) continue;
+        const ids = arm.stations;
+        if (ids.length < 4) continue;
+        const pts = ids.map(id => Chart.pos.get(id)).filter(Boolean);
+        if (pts.length !== ids.length) continue;
+        for (let i = 1; i < ids.length - 2; i++) {
+          if ((use.get(ids[i]) || 0) > 1 || (use.get(ids[i + 1]) || 0) > 1) continue;
+          const A = pts[i - 1], B = pts[i], C = pts[i + 1], D = pts[i + 2];
+          const d1x = B.x - A.x, d1y = B.y - A.y, l1 = Math.hypot(d1x, d1y);
+          const d2x = C.x - B.x, d2y = C.y - B.y, l2 = Math.hypot(d2x, d2y);
+          const d3x = D.x - C.x, d3y = D.y - C.y, l3 = Math.hypot(d3x, d3y);
+          if (l1 < 0.2 || l2 < 0.25 || l3 < 0.2) continue;
+          const u1x = d1x / l1, u1y = d1y / l1;
+          const u2x = d2x / l2, u2y = d2y / l2;
+          const u3x = d3x / l3, u3y = d3y / l3;
+          const dot1 = u1x * u2x + u1y * u2y;
+          const dot2 = u2x * u3x + u2y * u3y;
+          if (Math.abs(dot1) > 1e-6 || Math.abs(dot2) > 1e-6) continue;
+          const cr1 = u1x * u2y - u1y * u2x;
+          const cr2 = u2x * u3y - u2y * u3x;
+          if (cr1 * cr2 >= 0) continue;
+          const sh = Math.min(l2 * 0.5, l3 * 0.42, 0.9);
+          const nb = { x: B.x + u2x * sh, y: B.y + u2y * sh };
+          const nc = { x: C.x + u3x * sh, y: C.y + u3y * sh };
+          const own = new Set(ids);
+          let bad = false;
+          for (const [oid, op] of Chart.pos) {
+            if (own.has(oid)) continue;
+            if (Math.hypot(op.x - nb.x, op.y - nb.y) < 0.55) { bad = true; break; }
+            if (Math.hypot(op.x - nc.x, op.y - nc.y) < 0.55) { bad = true; break; }
+          }
+          if (bad) continue;
+          Chart.pos.set(ids[i], { x: nb.x, y: nb.y, i: nb.x / cell, j: nb.y / cell });
+          Chart.pos.set(ids[i + 1], { x: nc.x, y: nc.y, i: nc.x / cell, j: nc.y / cell });
+          pts[i] = nb; pts[i + 1] = nc;
+          changed++;
+        }
+      }
+    }
+    if (!changed) break;
+  }
 }
 
 function computeChart(force) {
@@ -1932,11 +2116,12 @@ function computeChart(force) {
     n.qy = n.sy / Chart.cell - my;
   }
 
-  let best = null;
-  for (let rep = 0; rep < 2; rep++) {
+  let best = null, bestVal = Infinity;
+  for (let rep = 0; rep < 8; rep++) {
     const r = chartSolve(G.nodes, 20261121 + rep * 7717);
-    if (!best || r.score < best.score) best = r;
-    if (best.viol === 0 && best.col === 0) break;
+    const val = r.viol * 10 + r.bend * 3 + r.score * 0.03;
+    if (val < bestVal) { bestVal = val; best = r; }
+    if (best.viol === 0 && best.bend <= 24) break;
   }
 
   for (let i = 0; i < N; i++) {
@@ -1946,6 +2131,9 @@ function computeChart(force) {
       i: best.ix[i], j: best.iy[i]
     });
   }
+  smoothJogsChart();
+  // dezigzagChart(G);  // 45度锐角治理：暂时关闭自由直线拉伸，改由网格+锐角惩罚控制
+  Chart.segOff = chartOverlapOffsets();
   Chart.viol = best.viol;
   Chart.bends = best.bend;
   Chart.ready = true;
@@ -1974,7 +2162,7 @@ function fitChart() {
   const bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY);
   const cw = Math.max(140, W - side * 2 - 24);
   const chh = Math.max(140, H - spec.headerH - spec.legendBand - 46);
-  const s = Math.max(4, Math.min(160, Math.min(cw / bw, chh / bh)));
+  const s = Math.max(4, Math.min(320, Math.min(cw / bw, chh / bh)));
   App.cam.s = s;
   const boxCx = W / 2, boxCy = spec.headerH + 12 + chh / 2;
   App.cam.x = (minX + maxX) / 2 + (W / 2 - boxCx) / s;
@@ -2067,19 +2255,9 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
 
   /* --- 格网点阵 --- */
   const cellPx = Chart.cell * s;
-  if (cellPx > 9 * k && cellPx < 90 * k) {
-    g.fillStyle = 'rgba(52,86,120,0.055)';
-    const o = px(0, 0);
-    const i0 = Math.floor((sx0 - o.x) / cellPx) - 1, i1 = Math.ceil((sx1 - o.x) / cellPx) + 1;
-    const j0 = Math.floor((sy0 - o.y) / cellPx) - 1, j1 = Math.ceil((sy1 - o.y) / cellPx) + 1;
-    for (let i = i0; i <= i1; i++) {
-      for (let j = j0; j <= j1; j++) {
-        g.fillRect(o.x + i * cellPx, o.y + j * cellPx, 1.4 * k, 1.4 * k);
-      }
-    }
-  }
 
-  const lw = Math.max(2.4, Math.min(14, cellPx * 0.46));
+
+  const lw = Math.max(2.2, Math.min(7.4, cellPx * 0.28));
   const visible = p => p.x > -70 && p.x < vw + 70 && p.y > -70 && p.y < vh + 70;
 
   /* --- 线路 --- */
@@ -2090,6 +2268,27 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
     g.beginPath();
     g.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+    g.stroke();
+  };
+
+  /* 倒角：每个转角按固定半径切圆角，不再出现尖角 */
+  const strokeRound = (pts) => {
+    if (pts.length < 3) return strokePath(pts);
+    const rad = Math.max(3.0 * k, Math.min(10 * k, cellPx * 0.24));
+    g.beginPath();
+    g.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const pv = pts[i - 1], v = pts[i], nx = pts[i + 1];
+      const d1 = Math.hypot(v.x - pv.x, v.y - pv.y) || 1;
+      const d2 = Math.hypot(nx.x - v.x, nx.y - v.y) || 1;
+      const r1 = Math.min(rad, d1 * 0.45), r2 = Math.min(rad, d2 * 0.45);
+      const ax = v.x + (pv.x - v.x) * r1 / d1, ay = v.y + (pv.y - v.y) * r1 / d1;
+      const bx = v.x + (nx.x - v.x) * r2 / d2, by = v.y + (nx.y - v.y) * r2 / d2;
+      g.lineTo(ax, ay);
+      g.quadraticCurveTo(v.x, v.y, bx, by);
+    }
+    const last = pts[pts.length - 1];
+    g.lineTo(last.x, last.y);
     g.stroke();
   };
 
@@ -2125,7 +2324,10 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   };
 
   for (const line of drawOrder) {
-    for (const arm of lineArms(line)) {
+    const arms = lineArms(line);
+    for (let ai = 0; ai < arms.length; ai++) {
+      const arm = arms[ai];
+      if (arm.hidden) continue;
       const pts = [];
       for (const id of arm.stations) {
         const p = Chart.pos.get(id);
@@ -2137,11 +2339,34 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
       g.lineCap = 'round';
       g.lineJoin = 'round';
 
+      /* 重合走廊分线：每条线段单独做法向偏移 */
+      const segPts = [];
+      const offMap = Chart.segOff;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const sg = offMap ? (offMap.get(line.id + '|' + ai + '|' + i) || 0) : 0;
+        const off = sg * Math.max(2.0, lw * 1.15);
+        const nx = -dy / d * off, ny = dx / d * off;
+        segPts.push([{ x: a.x + nx, y: a.y + ny }, { x: b.x + nx, y: b.y + ny }]);
+      }
+
+      const lanePts = [];
+      if (segPts.length) {
+        lanePts.push(segPts[0][0]);
+        for (let i = 1; i < segPts.length; i++) {
+          const a = segPts[i - 1][1], b = segPts[i][0];
+          lanePts.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+        }
+        lanePts.push(segPts[segPts.length - 1][1]);
+      }
+
       if (!line.enabled) {
         g.setLineDash([7 * k, 7 * k]);
         g.strokeStyle = 'rgba(95,110,128,0.5)';
         g.lineWidth = Math.max(1.6, lw * 0.45);
-        strokePath(pts);
+        strokeRound(lanePts);
         g.setLineDash([]);
         continue;
       }
@@ -2150,16 +2375,16 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
       if (lw > 3) {
         g.strokeStyle = 'rgba(255,255,255,0.95)';
         g.lineWidth = lw + 1.9 * k;
-        strokePath(pts);
+        strokeRound(lanePts);
       }
       g.strokeStyle = line.color;
       g.lineWidth = lw;
-      strokePath(pts);
+      strokeRound(lanePts);
     }
   }
 
   /* --- 车站符号 --- */
-  const rNorm = Math.max(1.6, lw * 0.34);
+  const rNorm = Math.max(1.6, lw * 0.44);
   for (const st of App.stations.values()) {
     const cp = Chart.pos.get(st.id);
     if (!cp) continue;
@@ -2216,6 +2441,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
     };
     for (const line of drawOrder) {
       for (const arm of lineArms(line)) {
+        if (arm.hidden) continue;
         const s = arm.stations;
         if (s.length < 2) continue;
         badge(line, s[0], s[1]);
@@ -2225,11 +2451,12 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   }
 
   /* --- 站名 --- */
-  const fs = cellPx > 34 ? 13.5 : cellPx > 17 ? 12 : cellPx > 11 ? 10.5 : 9;
+  const fs = cellPx > 52 ? 11.8 : cellPx > 32 ? 10.8 : cellPx > 20 ? 9.8 : 8.0;
   const items = [];
   const terminals = new Set();
   for (const line of App.lines) {
     for (const arm of lineArms(line)) {
+      if (arm.hidden) continue;
       if (arm.stations.length < 2) continue;
       terminals.add(arm.stations[0]);
       terminals.add(arm.stations[arm.stations.length - 1]);
@@ -2243,7 +2470,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
     if (!trans && !terminals.has(st.id) && !showAll) continue;
     items.push({ st, cp, trans, term: terminals.has(st.id) });
   }
-  items.sort((a, b) => (b.trans - a.trans) || (b.term - a.term) || (b.st.w - a.st.w));
+  items.sort((a, b) => (b.term - a.term) || (b.trans - a.trans) || (b.st.w - a.st.w));
 
   const cands = [
     [1, 0, 'left', 'middle'], [-1, 0, 'right', 'middle'],
@@ -2252,21 +2479,23 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
     [-1, -1, 'right', 'bottom'], [-1, 1, 'right', 'top']
   ];
   const halo = cellPx > 14;
+  const offs = [0, 4 * k, 10 * k];
+  Chart.missLabels = [];
 
   for (const it of items) {
     const p = px(it.cp.x, it.cp.y);
     if (!visible(p)) continue;
-    g.font = it.trans ? `700 ${Math.round((fs + 0.9) * k)}px ${CHART_FONT}`
-      : `500 ${Math.round(fs * k)}px ${CHART_FONT}`;
+    g.font = it.trans ? `700 ${Math.round((fs + 0.6) * k)}px ${CHART_FONT}` : `500 ${Math.round(fs * k)}px ${CHART_FONT}`;
     const tw = g.measureText(it.st.name).width;
-    const th = (fs + 1) * k;
-    const rr = (it.trans ? rNorm * 1.9 : rNorm) + 4 * k;
-    // 顺着线路走向的方向容易压到线，放到最后再考虑
+    const th = (fs + 0.5) * k;
+    const rr = (it.trans ? rNorm * 1.8 : rNorm) + (it.trans ? 3.4 : 3.0) * k;
+
     const along = new Set();
     for (const lid of it.st.lines) {
       const ln = getLine(lid);
       if (!ln) continue;
       for (const arm of lineArms(ln)) {
+        if (arm.hidden) continue;
         const at = arm.stations.indexOf(it.st.id);
         if (at < 0) continue;
         for (const nb of [at - 1, at + 1]) {
@@ -2280,33 +2509,64 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
     const ordered = cands.filter(c => !along.has(c[0] + ',' + c[1]))
       .concat(cands.filter(c => along.has(c[0] + ',' + c[1])));
 
-    // 先在空白处找位置；重点站（换乘/终点）找不到时允许压线（带白色描边）
     const passes = it.trans || it.term ? [false, true] : [false];
     let done = false;
     for (const allowInk of passes) {
       if (done) break;
-      for (const [dx, dy, align, base] of ordered) {
-        const x = align === 'left' ? p.x + rr : align === 'right' ? p.x - rr - tw : p.x - tw / 2;
-        const y = base === 'top' ? p.y + rr : base === 'bottom' ? p.y - rr - th : p.y - th / 2;
-        if (y < area.y0 + 4 * k || y + th > area.y1 - 4 * k) continue;
-        if (x < area.x0 - 2 * k || x + tw > area.x1 + 2 * k) continue;
-        if (!allowInk && !inkFree(x - 1.2 * k, y - 0.8 * k, tw + 2.4 * k, th + 1.6 * k)) continue;
-        if (!labelBox(x - 1.5 * k, y - 1 * k, tw + 3 * k, th + 2 * k)) continue;
-        g.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
-        g.textBaseline = base === 'top' ? 'top' : base === 'bottom' ? 'bottom' : 'middle';
-        const tx = align === 'left' ? x : align === 'right' ? x + tw : x + tw / 2;
-        const ty = base === 'top' ? y : base === 'bottom' ? y + th : y + th / 2;
-        if (halo || allowInk) {
-          g.lineWidth = (allowInk ? 3.4 : 2.4) * k;
-          g.strokeStyle = 'rgba(255,255,255,0.96)';
+      for (const off of offs) {
+        if (done) break;
+        if (allowInk && off > 8 * k) continue;
+        for (const [dx, dy, align, base] of ordered) {
+          const x = dx > 0 ? p.x + rr + off : dx < 0 ? p.x - rr - off - tw : p.x - tw / 2;
+          const y = dy > 0 ? p.y + rr + off : dy < 0 ? p.y - rr - off - th : p.y - th / 2;
+          if (y < area.y0 + 3 * k || y + th > area.y1 - 3 * k) continue;
+          if (x < area.x0 - 2 * k || x + tw > area.x1 + 2 * k) continue;
+          if (!allowInk && !inkFree(x - 1 * k, y - 0.25 * k, tw + 2 * k, th + 0.5 * k)) continue;
+          if (!labelBox(x - 1.4 * k, y - 0.6 * k, tw + 2.8 * k, th + 1.2 * k)) continue;
+
+          if (off > 5 * k && !allowInk) {
+            const ex = dx > 0 ? x : dx < 0 ? x + tw : p.x;
+            const ey = dy > 0 ? y : dy < 0 ? y + th : p.y;
+            g.strokeStyle = 'rgba(60,76,96,0.42)';
+            g.lineWidth = 0.8 * k;
+            g.beginPath();
+            g.moveTo(p.x + dx * (rNorm + 1.5 * k), p.y + dy * (rNorm + 1.5 * k));
+            g.lineTo(ex, ey);
+            g.stroke();
+          }
+
+          g.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
+          g.textBaseline = base === 'top' ? 'top' : base === 'bottom' ? 'bottom' : 'middle';
+          const tx = align === 'left' ? x : align === 'right' ? x + tw : x + tw / 2;
+          const ty = base === 'top' ? y : base === 'bottom' ? y + th : y + th / 2;
+          g.lineWidth = (allowInk ? 2.8 : 2.1) * k;
+          g.strokeStyle = 'rgba(255,255,255,0.97)';
           g.strokeText(it.st.name, tx, ty);
+          g.fillStyle = it.trans ? '#0d1626' : it.term ? '#182331' : '#2d3a49';
+          g.fillText(it.st.name, tx, ty);
+          done = true;
+          break;
         }
-        g.fillStyle = it.trans ? '#0d1626' : it.term ? '#1c2734' : '#404d5f';
-        g.fillText(it.st.name, tx, ty);
-        done = true;
-        break;
       }
     }
+    if (!done && it.term) {
+      const [dx, dy, align, base] = ordered[0];
+      let x = dx > 0 ? p.x + rr + 6 * k : dx < 0 ? p.x - rr - 6 * k - tw : p.x - tw / 2;
+      let y = dy > 0 ? p.y + rr + 6 * k : dy < 0 ? p.y - rr - 6 * k - th : p.y - th / 2;
+      x = Math.min(Math.max(x, area.x0 + 3 * k), area.x1 - tw - 3 * k);
+      y = Math.min(Math.max(y, area.y0 + 3 * k), area.y1 - th - 3 * k);
+      g.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
+      g.textBaseline = base === 'top' ? 'top' : base === 'bottom' ? 'bottom' : 'middle';
+      const tx = align === 'left' ? x : align === 'right' ? x + tw : x + tw / 2;
+      const ty = base === 'top' ? y : base === 'bottom' ? y + th : y + th / 2;
+      g.lineWidth = 2.4 * k;
+      g.strokeStyle = 'rgba(255,255,255,0.97)';
+      g.strokeText(it.st.name, tx, ty);
+      g.fillStyle = '#182331';
+      g.fillText(it.st.name, tx, ty);
+      done = true;
+    }
+    if (!done && it.term) Chart.missLabels.push(it.st.name);
   }
 
   /* --- 页眉（纸面上方） --- */
@@ -2322,10 +2582,10 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   g.textBaseline = 'alphabetic';
   g.fillStyle = '#0d1624';
   g.font = `700 ${Math.round(24 * k)}px ${CHART_FONT}`;
-  g.fillText('上海地铁线网图', sx0 + 34 * k, sy0 + 44 * k);
+  g.fillText((document.title.split('·')[0] || '线网').trim() + '线网图', sx0 + 34 * k, sy0 + 44 * k);
   g.fillStyle = '#7d8999';
   g.font = `600 ${Math.round(9 * k)}px ${CHART_FONT}`;
-  g.fillText('S H A N G H A I   M E T R O   N E T W O R K   M A P', sx0 + 35 * k, sy0 + 64 * k);
+  g.fillText((GEO.meta || 'METRO NETWORK MAP').replace(/_/g, ' '), sx0 + 35 * k, sy0 + 64 * k);
 
   let nSt = 0;
   for (const st of App.stations.values()) if (st.lines.length) nSt++;
@@ -2337,7 +2597,7 @@ function drawChartTo(g, vw, vh, cam, k, uiInset) {
   g.fillText(`2026.11 · ${drawOrder.length} 条线 · ${nSt} 座车站`, rx, sy0 + 38 * k);
   g.fillStyle = '#95a0b2';
   g.font = `500 ${Math.round(9 * k)}px ${CHART_FONT}`;
-  g.fillText(`按真实几何自动压缩 · 八方向格网 · 对齐 ${alignPct}%`, rx, sy0 + 56 * k);
+  g.fillText('运营线路示意图 · 站距经示意化处理', rx, sy0 + 56 * k);
 
   /* --- 页脚图例 --- */
   const ly = sy1 - legendBand;
@@ -2413,7 +2673,7 @@ function chartExport() {
   g3.fillRect(0, 0, w, h);
   g3.drawImage(c2, x, y, w, h, 0, 0, w, h);
   const a = document.createElement('a');
-  a.download = '上海地铁线网图.png';
+  a.download = (document.title.split('·')[0] || '线网').trim() + '线网图.png';
   a.href = c3.toDataURL('image/png');
   a.click();
 }
@@ -2424,7 +2684,7 @@ function chartExport() {
     computeChart(true);
     fitChart();
     const st = Chart.edges ? ((Chart.edges - Chart.viol) / Chart.edges * 100).toFixed(1) : '—';
-    toast(`拓扑图已重算 · ${Chart.edges} 段 · 八方向对齐 ${st}%`);
+    toast(`拓扑图已重算 · ${Chart.edges} 段`);
   });
   bind('btnChartFit', () => fitChart());
   bind('btnChartPng', () => { chartExport(); toast('线网图已导出为 PNG'); });
@@ -2508,7 +2768,7 @@ function renderLineList() {
     item.innerHTML = `
       <span class="lineChip" style="background:${line.color}">${line.short}</span>
       <span class="nm">${line.name}${BUILDING_IDS.indexOf(line.id) >= 0 ? '<i class="bld">在建</i>' : ''}</span>
-      <span class="ct">${uniqueCount(line)}站${lineArms(line).length > 1 ? '·' + lineArms(line).length + '支' : ''}${peak !== null ? ' · ' + peak + '%' : ''}</span>
+      <span class="ct">${uniqueCount(line)}站${lineArms(line).filter(a => !a.hidden).length > 1 ? '·' + lineArms(line).filter(a => !a.hidden).length + '支' : ''}${peak !== null ? ' · ' + peak + '%' : ''}</span>
       <span class="dot"></span>`;
     item.addEventListener('click', () => selectLine(line.id));
     item.addEventListener('dblclick', () => { App.editingLine = line.id; setMode('edit'); renderEditSelect(); });
@@ -2593,12 +2853,13 @@ function buildSeq(box, hint, line) {
       const head = document.createElement('div');
       head.className = 'seqBranch';
       const fx = App.stations.get(arm.stations[0]);
-      head.textContent = ai === 0
-        ? `主干 · ${arm.stations.length} 站`
-        : `支线 ${ai} · 分叉点 ${fx ? fx.name : '?'} · ${arm.stations.length} 站`;
+      head.textContent = arm.hidden
+        ? `${arm.name || '大站快车'} · ${arm.stations.length} 站`
+        : (ai === 0 ? `主干 · ${arm.stations.length} 站`
+        : `支线 ${ai} · 分叉点 ${fx ? fx.name : '?'} · ${arm.stations.length} 站`);
       frag.appendChild(head);
     }
-    const canDetach = ai === 0 ? arm.stations.length > 2 : arm.stations.length > 1;
+    const canDetach = arm.hidden ? false : (ai === 0 ? arm.stations.length > 2 : arm.stations.length > 1);
     arm.stations.forEach((sid, i) => {
       const st = App.stations.get(sid);
       if (!st) return;
@@ -2717,7 +2978,7 @@ function snapshot() {
     lines: App.lines.map(l => ({
       id: l.id, name: l.name, short: l.short, color: l.color, headway: l.headway, speed: l.speed, cap: l.cap,
       stations: [...l.stations],
-      arms: lineArms(l).map(a => ({ stations: [...a.stations] })),
+      arms: lineArms(l).map(MetroMap.copyArm),
       enabled: l.enabled, custom: l.custom
     })),
     spent: App.spent, newStations: App.newStations, customStations: App.customStations,
@@ -2734,7 +2995,8 @@ function restore(snap) {
   }
   App.lines = snap.lines.map(l => {
     const obj = { ...l, stations: [...l.stations], segs: null, pax: 0, peakLoad: 0, fleet: 0, depTimer: 0 };
-    obj.arms = (l.arms && l.arms.length ? l.arms : [{ stations: l.stations }]).map(a => ({ stations: [...a.stations] }));
+    obj.arms = (l.arms && l.arms.length ? l.arms : [{ stations: l.stations }]).map(MetroMap.copyArm);
+    if (!l.custom) MetroMap.restoreServiceArms(obj.arms, LINE_DEFS.find(def => def.id === l.id));
     obj.arms[0].stations = obj.stations;   // 主干与 line.stations 共用同一数组
     return obj;
   });
