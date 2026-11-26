@@ -1,199 +1,333 @@
-/* OCTI-Lite: Metro Maps on Octilinear Grid Graphs (Bast et al. EuroVis 2020) 近似实现。开源算法思路，独立编写。 */
-/* ============================================================
-   OCTI-Lite：基于 Bast/Brosi/Storandt (EuroVis 2020)
-   "Metro Maps on Octilinear Grid Graphs" 的近似算法实现。
-   核心：8 端口扩展网格图 + 角度转弯代价 + Dijkstra 最短路。
+/* OCTI-Lite: 地铁图布局（基于 Bast et al. EuroVis 2020 思路，独立编写）。
+   核心：带行进方向的网格搜索和按线路顺序布站。
+   硬约束：禁止锐角转弯（转弯内角 ≥90°，即方向差 ≤90°=2步）。
+   软偏好：水平/竖直段代价更低（主干尽可能横平竖直），45°斜段允许但略贵。
+   至多一个换乘站的单支非环线采用直线。倒角在绘制层处理。
    零依赖，纯 JS。
 
-   端口方向编号（顺时针）：0=E,1=SE,2=S,3=SW,4=W,5=NW,6=N,7=NE
+   方向编号（顺时针）：0=E,1=SE,2=S,3=SW,4=W,5=NW,6=N,7=NE
    ============================================================ */
 
 const DIRV = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
 
-// 角度差（以 45° 为单位）：0=直行(180°视觉), 1=135°, 2=90°, 3=45°
-// 论文：c180=0, c135=1, c90=1.5, c45=2；加 offset a=1 后 ch=0，
-// 实际便于实现的边权：直行=1, 135°=2, 90°=2.5, 45°=3（含每跳基础代价1）
-const TURN_COST = [0, 2, 2.5, 3]; // 直行(180°)免费，转弯按角度惩罚
+// 转弯代价（以 45° 步长为索引）：0=直行(免费), 1=135°内角(钝角), 2=90°内角
+// 方向差 3 步(45°内角=锐角)与 4 步(掉头)一律禁止 → 硬约束无锐角。
+const TURN_COST = [0, 2.2, 3.0];   // 135°转弯比90°稍便宜（更平滑）
 function turnSteps(dirA, dirB) {
-  // dirA 为进入方向的反向（即当前朝向），dirB 为离开方向
   let d = Math.abs(dirB - dirA);
   if (d > 4) d = 8 - d;
-  return d; // 0..4；4 表示掉头
+  return d; // 0=直行,1=45°方向差(135°内角),2=90°(90°内角),3=锐角(禁),4=掉头(禁)
+}
+
+class OctiQueue {
+  constructor() {
+    this.items = [];
+  }
+  push(state, score) {
+    const items = this.items;
+    let index = items.length;
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (items[parent].score <= score) break;
+      items[index] = items[parent];
+      index = parent;
+    }
+    items[index] = { state, score };
+  }
+  pop() {
+    const items = this.items;
+    if (!items.length) return null;
+    const first = items[0];
+    const last = items.pop();
+    if (!items.length) return first;
+    let index = 0;
+    while (2 * index + 1 < items.length) {
+      let child = 2 * index + 1;
+      if (child + 1 < items.length && items[child + 1].score < items[child].score) child++;
+      if (items[child].score >= last.score) break;
+      items[index] = items[child];
+      index = child;
+    }
+    items[index] = last;
+    return first;
+  }
+}
+
+function octiCell(point) {
+  return point.x + ',' + point.y;
+}
+
+function octiHeading(from, to) {
+  return octSnap(to.x - from.x, to.y - from.y);
 }
 
 class OctiGrid {
-  constructor(W, H) {
-    this.W = W; this.H = H;
-    this.N = W * H;
-    // 端口节点索引：node(x,y,port) = ((y*W+x)*8 + port)
-    // 但我们需要"原始格节点"用于起终点，用 port=-1 表示为 (y*W+x)*8+8
-    this.blocked = new Uint8Array(this.N * 9);     // 端口是否被封（ bend-closed ）
-    this.sinkClosed = new Uint8Array(this.N);      // 该格节点 sink 是否封
-    this.sinkExtra = new Float64Array(this.N * 9); // sink 额外代价（位置偏好/线序）
-    this.usedNode = new Uint8Array(this.N);        // 已被某条路径占用（防止交叉）
-    this.edgeCost = new Float64Array(this.N * 9).fill(1); // 每格每方向的额外代价（地形/障碍）
-    this.closedDiag = new Set();                   // 被封的对角边
+  constructor(positions) {
+    const bounds = [...positions.values()];
+    this.left = Math.min(...bounds.map(p => p.x)) - 14;
+    this.top = Math.min(...bounds.map(p => p.y)) - 14;
+    this.width = Math.max(...bounds.map(p => p.x)) - this.left + 15;
+    this.height = Math.max(...bounds.map(p => p.y)) - this.top + 15;
+    const cells = this.width * this.height;
+    this.blocked = new Uint8Array(cells);
+    this.load = new Uint16Array(cells);
+    this.tracks = new Uint8Array(cells * 4);
+    this.stationEdges = new Uint8Array(cells * 4);
+    this.g = new Float64Array(cells * 8);
+    this.parent = new Int32Array(cells * 8);
+    this.seen = new Uint32Array(cells * 8);
+    this.committed = new Uint32Array(cells * 8);
+    this.search = 0;
+    for (const p of bounds) this.blocked[this.cell(p.x, p.y)] = 1;
   }
-  cellIndex(x, y) { return y * this.W + x; }
-  inBounds(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
-  portIndex(x, y, p) { return (y * this.W + x) * 9 + p; }
-  centerIndex(x, y) { return (y * this.W + x) * 9 + 8; }
-  cellOfNode(u) { return Math.floor(u / 9); }
+  cell(x, y) {
+    return (y - this.top) * this.width + x - this.left;
+  }
+  point(cell) {
+    return { x: this.left + cell % this.width, y: this.top + Math.floor(cell / this.width) };
+  }
+  edge(cell, next, heading) {
+    return (heading < 4 ? cell : next) * 4 + heading % 4;
+  }
+  step(a, b) {
+    return this.edge(this.cell(a.x, a.y), this.cell(b.x, b.y), octiHeading(a, b));
+  }
+  reserve(path, marks = []) {
+    for (const p of path.slice(1, -1)) this.load[this.cell(p.x, p.y)]++;
+    for (let i = 1; i < path.length; i++) this.tracks[this.step(path[i - 1], path[i])] = 1;
+    for (const mark of marks) this.stationEdges[mark.edge] = 1;
+  }
 
-  // Dijkstra：从起点格 (sx,sy) 的任意出口端口，到目标格集合 targets 的任意入口端口
-  // 返回 { cost, path:[{x,y}], startPort, endPort } 或 null
-  route(sx, sy, targets, opt = {}) {
-    const { W, H, N } = this;
-    const allowUsed = opt.allowUsed || null; // 允许复用的节点（起终点格）
-    const maxCost = opt.maxCost ?? Infinity;
-    const totalNodes = N * 9; // 8 端口 + 1 中心
-    const dist = new Float64Array(totalNodes).fill(Infinity);
-    const prev = new Int32Array(totalNodes).fill(-1);
-    // 最小堆
-    const heap = [];
-    const push = (idx, d) => {
-      heap.push([d, idx]);
-      let i = heap.length - 1;
-      while (i > 0) {
-        const p = (i - 1) >> 1;
-        if (heap[p][0] <= heap[i][0]) break;
-        [heap[p], heap[i]] = [heap[i], heap[p]]; i = p;
+  // 方向只在实际走一步时改变。同格连续旋转会绕过转角约束。
+  route(from, to, incoming, nextHeading, closeHeading, trunk, exclusive) {
+    const start = this.cell(from.x, from.y), goal = this.cell(to.x, to.y);
+    const queue = new OctiQueue(), search = ++this.search;
+    const diag = trunk ? 1.88 : 1.57;
+    const h = (x, y) => {
+      const dx = Math.abs(x - to.x), dy = Math.abs(y - to.y);
+      return Math.max(dx, dy) + (diag - 1) * Math.min(dx, dy);
+    };
+    const advance = (x, y, cell, heading, cost, state) => {
+      const px = x - this.left, py = y - this.top;
+      for (let d = 0; d < DIRV.length; d++) {
+        const turn = heading == null ? 0 : turnSteps(heading, d);
+        if (turn > 2) continue;
+        const [dx, dy] = DIRV[d];
+        const nx = px + dx, ny = py + dy;
+        if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) continue;
+        const next = cell + dy * this.width + dx;
+        if (next === start || (next !== goal && this.blocked[next])) continue;
+        if (next === goal && closeHeading != null && turnSteps(d, closeHeading) > 2) continue;
+        const edge = this.edge(cell, next, d);
+        if (this.stationEdges[edge] || (exclusive && this.tracks[edge])) continue;
+        const nextState = next * 8 + d;
+        if (this.committed[nextState] === search) continue;
+        const arrival = next === goal && nextHeading != null ? turnSteps(d, nextHeading) * 1.1 : 0;
+        const candidate = cost + (dx && dy ? diag : 1) + TURN_COST[turn] +
+          Math.min(5, this.load[next]) * 1.2 + this.tracks[edge] * 0.9 + arrival;
+        if (this.seen[nextState] === search && candidate >= this.g[nextState]) continue;
+        this.seen[nextState] = search;
+        this.g[nextState] = candidate;
+        this.parent[nextState] = state;
+        queue.push(nextState, candidate + h(x + dx, y + dy));
       }
     };
-    const pop = () => {
-      const top = heap[0], last = heap.pop();
-      if (heap.length) {
-        heap[0] = last;
-        let i = 0;
-        for (;;) {
-          const l = 2*i+1, r = l+1; let m = i;
-          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
-          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
-          if (m === i) break;
-          [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
-        }
+    advance(from.x, from.y, start, incoming, 0, -1);
+    let item;
+    while ((item = queue.pop())) {
+      const state = item.state;
+      if (this.committed[state] === search) continue;
+      this.committed[state] = search;
+      const cell = Math.floor(state / 8);
+      if (cell === goal) {
+        const path = [];
+        for (let p = state; p !== -1; p = this.parent[p]) path.push(this.point(Math.floor(p / 8)));
+        path.push(from);
+        return path.reverse();
       }
-      return top;
-    };
-
-    const targetSet = new Set(targets.map(t => this.cellIndex(t.x, t.y)));
-    const startCell = this.cellIndex(sx, sy);
-    // 起点：从中心节点出发，进入各端口（sink 代价）
-    const startCenter = this.centerIndex(sx, sy);
-    for (let p = 0; p < 8; p++) {
-      const pi = this.portIndex(sx, sy, p);
-      if (this.blocked[pi]) continue;
-      const c = this.sinkExtra[pi];
-      dist[pi] = c; prev[pi] = startCenter;
-      push(pi, c);
+      const { x, y } = this.point(cell);
+      advance(x, y, cell, state % 8, this.g[state], state);
     }
-    dist[startCenter] = 0;
-
-    let goalIdx = -1, goalCost = Infinity;
-    while (heap.length) {
-      const [d, u] = pop();
-      if (d > dist[u] + 1e-9) continue;
-      if (d >= goalCost || d > maxCost) break;
-      const isPort = u % 9 !== 8;
-      const cell = Math.floor(u / 9);
-      const x = cell % W, y = (cell / W) | 0;
-
-      if (isPort) {
-        const p = u % 9;
-        // 到达目标格：通过 sink 进入中心（的目标端口）
-        if (targetSet.has(cell) && cell !== startCell) {
-          if (!this.sinkClosed[cell]) {
-            // 到达代价 = sinkExtra（目标端口的入口代价）
-            const arrive = d + this.sinkExtra[this.portIndex(x,y,p)];
-            if (arrive < goalCost) { goalCost = arrive; goalIdx = u; }
-          }
-        }
-        // 端口 p = 当前行进方向。转弯到同格其它方向 q：转角=|p-q|（1=135°,2=90°,3=45°,4=掉头）
-        for (let step = 1; step <= 4; step++) {
-          for (const q of [(p + step) % 8, (p - step + 8) % 8]) {
-            const vi = this.portIndex(x, y, q);
-            if (this.blocked[vi]) continue;
-            const nd = d + TURN_COST[Math.min(step,3)] * (step === 4 ? 2 : 1);
-            if (nd < dist[vi] - 1e-9) { dist[vi] = nd; prev[vi] = u; push(vi, nd); }
-          }
-        }
-        // 沿方向 p 移动到邻居，行进方向保持 p
-        const [dx, dy] = DIRV[p];
-        const nx = x + dx, ny = y + dy;
-        if (this.inBounds(nx, ny)) {
-          const vi = this.portIndex(nx, ny, p);
-          if (!this.blocked[vi]) {
-            const nd = d + this.edgeCost[vi] + 1; // 每跳基础代价
-            if (nd < dist[vi] - 1e-9) { dist[vi] = nd; prev[vi] = u; push(vi, nd); }
-          }
-        }
-      } else {
-        // 中心节点：只允许在起点（已处理）；其他中心节点不用于穿越
-      }
-    }
-    if (goalIdx < 0) return null;
-    // 回溯端口路径
-    const portPath = [];
-    for (let u = goalIdx; u >= 0; u = prev[u]) {
-      if (u % 9 !== 8) {
-        const cell = Math.floor(u/9), p = u%9;
-        portPath.push({ x: cell % W, y: (cell/W)|0, p });
-      }
-      if (portPath.length > W*H) break;
-    }
-    portPath.reverse();
-    // 提取格子路径（去重连续相同格）
-    const cells = [];
-    for (const q of portPath) {
-      if (!cells.length || cells[cells.length-1].x !== q.x || cells[cells.length-1].y !== q.y)
-        cells.push({x:q.x, y:q.y});
-    }
-    return { cost: goalCost, path: cells, ports: portPath };
+    return null;
   }
 }
 
-/* ============================================================
-   OCTI-Layout —— 完整布局器（近似算法，Bast et al. EuroVis 2020 §4）
-   流程：
-     1. 提取线图，deg-2 收缩（只保留换乘站+端点）
-     2. 关键节点吸附到网格（按真实方位，Voronoi 分离）
-     3. 按 line-degree 排序边
-     4. 逐边 Dijkstra 寻路（8端口网格+转角代价），已用节点封禁防交叉
-     5. 局部搜索优化（移动单个站并重路由邻边）
-     6. 普通站沿八方向曲线均匀插回
-   ============================================================ */
-
-
 function octSnap(dx, dy) {
+  if (!dx && !dy) return 0;
   const k = ((Math.round(Math.atan2(dy, dx) / (Math.PI/4)) % 8) + 8) % 8;
   return k;
 }
-function octLegal(ax, ay, bx, by) {
-  const dx = Math.abs(bx-ax), dy = Math.abs(by-ay);
-  return dx===0 || dy===0 || dx===dy;
+
+function networkComponents(input) {
+  const groups = new Map();
+  const parent = new Map();
+  function root(id) {
+    if (!parent.has(id)) parent.set(id, id);
+    let top = id;
+    while (parent.get(top) !== top) top = parent.get(top);
+    while (parent.get(id) !== top) {
+      const next = parent.get(id);
+      parent.set(id, top);
+      id = next;
+    }
+    return top;
+  }
+  const lines = input.lines.map(line => ({
+    ...line,
+    arms: line.arms.map(arm => arm.filter((id, i) => i === 0 || id !== arm[i - 1]))
+      .filter(arm => arm.length > 1)
+  })).filter(line => line.arms.length);
+  for (const line of lines) {
+    const station = line.arms[0][0];
+    for (const id of line.arms.flat()) {
+      if (!Number.isFinite(input.stations[id]?.x) || !Number.isFinite(input.stations[id]?.y)) {
+        throw new Error('站点坐标无效：' + id);
+      }
+      parent.set(root(id), root(station));
+    }
+  }
+  for (const line of lines) {
+    const key = root(line.arms[0][0]);
+    if (!groups.has(key)) groups.set(key, { lines: [], ids: new Set() });
+    const group = groups.get(key);
+    group.lines.push(line);
+    for (const arm of line.arms) for (const id of arm) group.ids.add(id);
+  }
+  return [...groups.values()];
 }
 
+function routeBounds(routes) {
+  const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const route of routes) for (const p of route.points) {
+    box.minX = Math.min(box.minX, p.x); box.maxX = Math.max(box.maxX, p.x);
+    box.minY = Math.min(box.minY, p.y); box.maxY = Math.max(box.maxY, p.y);
+  }
+  return box;
+}
+
+// 连通分量独立求解。摆放时保留大致地理方位，有换乘关系的线路始终在同一张局部图。
 function octiLayout(input, opt = {}) {
-  const SCALE = opt.scale ?? 1;          // 经纬度→网格缩放（数据已是 world 坐标）
+  const outPos = Object.create(null), routes = [], routed = [], pos = new Map();
+  let turns = 0, straights = 0, retries = 0, keyNodes = 0, edges = 0;
+  let collisions = 0, acuteTurns = 0, octViolations = 0;
+  const components = networkComponents(input).sort((a, b) => b.ids.size - a.ids.size);
+  const parts = components.map(group => {
+    const { ids, lines } = group;
+    const stations = Object.create(null);
+    let x = 0, y = 0;
+    for (const id of ids) {
+      const point = input.stations[id];
+      stations[id] = point;
+      x += point.x; y += point.y;
+    }
+    const radius = opt.radius ?? Math.max(46, Math.min(250, Math.round(28 + Math.sqrt(ids.size) * 4.5)));
+    const settings = { pow: 0.85, keyPasses: 14, ...opt, radius };
+    let local;
+    for (const spacing of [2, 3, 4]) {
+      try {
+        local = layoutConnectedNetwork({ lines, stations }, { ...settings, spacing });
+        break;
+      } catch (error) {
+        if (spacing === 4 || error.name !== 'OctiRoutingError') throw error;
+        retries++;
+      }
+    }
+    const box = routeBounds(local.routes);
+    return {
+      x: x / ids.size, y: y / ids.size, box, local,
+      w: Math.max(1, Math.ceil(box.maxX - box.minX)), h: Math.max(1, Math.ceil(box.maxY - box.minY))
+    };
+  });
+  if (parts.length) {
+    const gap = 12;
+    const extent = Math.max(1, Math.max(...parts.map(p => p.x)) - Math.min(...parts.map(p => p.x)),
+      Math.max(...parts.map(p => p.y)) - Math.min(...parts.map(p => p.y)));
+    const size = Math.sqrt(parts.reduce((sum, p) => sum + (p.w + gap) * (p.h + gap), 0));
+    const projection = size / extent;
+    const origin = parts[0], placed = [];
+    for (const p of parts) {
+      const targetX = Math.round((p.x - origin.x) * projection - p.w / 2);
+      const targetY = Math.round((p.y - origin.y) * projection - p.h / 2);
+      const xs = [targetX], ys = [targetY];
+      for (const box of placed) {
+        xs.push(box.x - p.w - gap, box.x + box.w + gap);
+        ys.push(box.y - p.h - gap, box.y + box.h + gap);
+      }
+      let best;
+      for (const x of xs) for (const y of ys) {
+        const score = (x - targetX) ** 2 + (y - targetY) ** 2;
+        if (best && best.score <= score) continue;
+        if (placed.some(b => x < b.x + b.w + gap && x + p.w + gap > b.x &&
+          y < b.y + b.h + gap && y + p.h + gap > b.y)) continue;
+        best = { x, y, score };
+      }
+      placed.push({ x: best.x, y: best.y, w: p.w, h: p.h });
+      const dx = Math.round(best.x - p.box.minX), dy = Math.round(best.y - p.box.minY);
+      const move = point => ({ ...point, x: point.x + dx, y: point.y + dy });
+      for (const [id, point] of Object.entries(p.local.outPos)) outPos[id] = move(point);
+      for (const [id, point] of p.local.pos) pos.set(id, move(point));
+      for (const route of p.local.routes) routes.push({ ...route, points: route.points.map(move) });
+      for (const edge of p.local.routed) routed.push({ ...edge, path: edge.path.map(move) });
+      const m = p.local.metrics;
+      keyNodes += m.keyNodes; edges += m.edges;
+      turns += m.totalCorners; straights += m.straightRate * m.totalCorners;
+      collisions += m.collisions; acuteTurns += m.acuteTurns; octViolations += m.octViolations;
+    }
+  }
+  return { pos, outPos, routed, failed: [], routes, bounds: routes.length ? routeBounds(routes) : null,
+    metrics: { components: parts.length, retries, keyNodes, edges, routed: edges, failed: 0, collisions,
+      acuteTurns, octViolations, totalCorners: turns, straightRate: turns ? straights / turns : 1 } };
+}
+
+class OctiRoutingError extends Error {
+  name = 'OctiRoutingError';
+}
+
+function layoutConnectedNetwork(input, opt) {
+
   const GRID_PAD = opt.pad ?? 3;
-  const PASSES = opt.passes ?? 8;
+
   let seed = opt.seed ?? 20261124;
   const rnd = () => { seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
 
-  const lines = input.lines.filter(l => l.arms && l.arms.some(a => a.length > 1));
+  const lines = input.lines.filter(line => line.arms?.some(arm => arm.length > 1));
   const stData = input.stations || {};
 
   // ---------- 1. deg-2 收缩：关键节点 = 换乘站 + 端点 ----------
-  const use = new Map(), adj = new Map();
-  for (const l of lines) for (const arm of l.arms) {
-    for (const s of arm) use.set(s, (use.get(s)||0)+1);
-    for (let k=0;k<arm.length-1;k++) {
-      const a=arm[k], b=arm[k+1];
-      if(!adj.has(a))adj.set(a,new Set()); if(!adj.has(b))adj.set(b,new Set());
-      adj.get(a).add(b); adj.get(b).add(a);
+  const use = new Map(), services = new Map(), terminals = new Set();
+  for (const line of lines) for (const arm of line.arms) {
+    if (arm.length < 2) continue;
+    terminals.add(arm[0]);
+    terminals.add(arm.at(-1));
+    for (const station of arm) {
+      use.set(station, (use.get(station) || 0) + 1);
+      if (!services.has(station)) services.set(station, new Set());
+      services.get(station).add(line.id);
     }
   }
-  const isKey = s => (use.get(s)||0)>1 || (adj.get(s)?.size===1);
+  const isKey = station => terminals.has(station) || use.get(station) > 1;
+  if (!use.size) return { pos: new Map(), outPos: {}, routes: [], metrics: { octViolations: 0, acuteTurns: 0, collisions: 0, straightRate: 1, totalCorners: 0 } };
+  // 换乘点很少的闭环也需要多个锚点，否则首尾同一站会被当成零长线段。
+  for (const line of lines) for (const arm of line.arms) {
+    if (arm.length < 3 || arm[0] !== arm.at(-1)) continue;
+    const ring = arm.slice(0, -1), count = ring.length;
+    const chosen = ring.flatMap((id, i) => isKey(id) ? [i] : []);
+    const minimum = Math.min(3, new Set(ring).size);
+    while (chosen.length < minimum) {
+      let best = -1, separation = -1;
+      for (const [i, id] of ring.entries()) {
+        if (isKey(id)) continue;
+        const space = Math.min(...chosen.map(j => Math.min(Math.abs(i - j), count - Math.abs(i - j))));
+        if (space > separation) {
+          best = i;
+          separation = space;
+        }
+      }
+      if (best < 0) break;
+      terminals.add(ring[best]);
+      chosen.push(best);
+    }
+  }
   const keyStations = [...use.keys()].filter(isKey);
 
   // ---------- 2. 关键节点吸附到网格 ----------
@@ -217,19 +351,11 @@ function octiLayout(input, opt = {}) {
     const f = r>0.01 ? (maxR*Math.pow(r/maxR, POW))/r : 0;
     return {x:p.dx*f, y:p.dy*f};
   };
-  const warped = new Map(keyStations.map((s,i)=>[s, warp(keyPts[i])]));
-  const gx = s => Math.round(mid + (warped.get(s).x/span)*R*1.3);
-  const gy = s => Math.round(mid + (warped.get(s).y/span)*R*1.3);
+  const warped = new Map(keyStations.map((s,i)=>{ const w=warp(keyPts[i]); const rr=Math.hypot(w.x,w.y); const boost=1+0.30*Math.exp(-Math.pow(rr/(maxR*0.42),2)); return [s,{x:w.x*boost,y:w.y*boost}]; }));
+  const gx = s => Math.round(mid + (warped.get(s).x/span)*R*1.5);
+  const gy = s => Math.round(mid + (warped.get(s).y/span)*R*1.2);
   // 相邻关键站若夹了很多普通站，需要更长的路径 → 调整吸附目标距离
-  const betweenCount=new Map();
-  for (const l of lines) for (const arm of l.arms) {
-    const seq=arm.filter(s=>isKey(s));
-    for(let k=0;k<seq.length-1;k++){
-      const n=Math.abs(arm.indexOf(seq[k+1])-arm.indexOf(seq[k]))-1;
-      const kk=seq[k]<seq[k+1]?seq[k]+'|'+seq[k+1]:seq[k+1]+'|'+seq[k];
-      betweenCount.set(kk,Math.max(betweenCount.get(kk)||0,n));
-    }
-  }
+
   // 去重合（螺旋）——按真实方位吸附，不做间距推开（避免共享点被反复推到边界）
   const occupied=new Set();
   const pos=new Map();
@@ -245,6 +371,43 @@ function octiLayout(input, opt = {}) {
     }
     occupied.add(x+','+y);
     pos.set(s,{x,y});
+  }
+  // 初始吸附后修正间距：相邻关键站必须留出中间普通站的格点
+  // （与 3b 的 spacingOK 同约束，避免初始就违规导致后续无法补救）
+  {
+    const nb0 = new Map();
+    for (const l of lines) for (const arm of l.arms) {
+      const seq = arm.filter(x => isKey(x));
+      for (let k = 0; k < seq.length - 1; k++) {
+        const need = Math.abs(arm.indexOf(seq[k+1]) - arm.indexOf(seq[k]));
+        if (!nb0.has(seq[k])) nb0.set(seq[k], []);
+        if (!nb0.has(seq[k+1])) nb0.set(seq[k+1], []);
+        nb0.get(seq[k]).push([seq[k+1], need]);
+        nb0.get(seq[k+1]).push([seq[k], need]);
+      }
+    }
+    for (let iter = 0; iter < 8; iter++) {
+      let fixed = 0;
+      for (const [s, nbs] of nb0) {
+        const P = pos.get(s); if (!P) continue;
+        for (const [nb, need] of nbs) {
+          const Q = pos.get(nb); if (!Q) continue;
+          let d = Math.max(Math.abs(P.x-Q.x), Math.abs(P.y-Q.y));
+          if (d >= need) continue;
+          // 沿连线方向把 P 推远（若 P 端点则推 Q）
+          const ux = d>0 ? (P.x-Q.x)/d : 1, uy = d>0 ? (P.y-Q.y)/d : 0;
+          const step = need - d;
+          for (let t = 0; t <= step; t++) {
+            const nx = Math.round(P.x + ux*(step+t)), ny = Math.round(P.y + uy*(step+t));
+            if (!occupied.has(nx+','+ny)) {
+              occupied.delete(P.x+','+P.y);
+              P.x=nx; P.y=ny; occupied.add(nx+','+ny); fixed++; break;
+            }
+          }
+        }
+      }
+      if (!fixed) break;
+    }
   }
 
   // ---------- 3. 线图边（收缩后） ----------
@@ -265,204 +428,381 @@ function octiLayout(input, opt = {}) {
     return d(e2)-d(e1);
   });
 
-  // ---------- 4. 逐边 Dijkstra 布线 ----------
-  const grid=new OctiGrid(W,H);
-  const routed=[];   // 每条边的路径与端口
-  const failed=[];
-  // 已确定位置的站允许被多条边复用（sink 重开）
-  const settled=new Set();
-  for (const e of edges) {
-    const A=pos.get(e.a), B=pos.get(e.b);
-    if(!A||!B){failed.push(e);continue;}
-    // 目标端口集合：B 格的所有端口（若 B 已服务其它线，重开其 sink）
-    const targets=[{x:B.x,y:B.y}];
-    // 起点 A：清空 A 格的 blocked 以便出发
-    for(let p=0;p<8;p++) grid.blocked[grid.portIndex(A.x,A.y,p)]=0;
-    const r=grid.route(A.x,A.y,targets,{});
-    if(!r){failed.push(e);continue;}
-    // 已用格点加高代价（软避让）而非完全封死——完全封死会让后续边无路可走。
-    // 论文用硬封禁+圆序约束保证拓扑，这里接受少量共享以换取全部边布通。
-    for (const q of r.path) {
-      if ((q.x===A.x&&q.y===A.y)||(q.x===B.x&&q.y===B.y)) continue;
-      const ci=grid.cellIndex(q.x,q.y);
-      grid.usedNode[ci]=1;
-      for(let p=0;p<8;p++) grid.edgeCost[grid.portIndex(q.x,q.y,p)] += 8;
-    }
-    routed.push({...e, path:r.path, ports:r.ports, cost:r.cost});
-    settled.add(e.a); settled.add(e.b);
-  }
-
-  // ---------- 5. 局部搜索优化（可选，移动站点并重路由） ----------
-  // 简化版：对直线率低的站做邻位试探，保持不重合/八方向；后续可扩展完整重路由
-  // （论文 §4.6 需要重路由所有邻边，成本高；本实现先跳过，靠 §4 的转角代价已足够）
-
-  // ---------- 6. 普通站均匀插回 ----------
-  const finalPos=new Map(pos);
-  for (const r of routed) {
-    const path=r.path;
-    if(path.length<2) continue;
-    // 计算路径的八方向弧长（每格算1）
-    const L=path.length-1;
-    const k=r.between;
-    if(k<=0) continue;
-    // 从 A 到 B 按索引均匀取 k 个格点
-    for(let t=1;t<=k;t++){
-      const f=t/(k+1);
-      const idx=Math.min(path.length-1, Math.max(0, Math.round(f*(path.length-1))));
-      const q=path[idx];
-      finalPos.set(`__tmp_${r.a}_${r.b}_${t}`, {x:q.x,y:q.y, via:r});
-    }
-  }
-  // 把普通站分配到各线的臂上（按在臂中的位置）
-  const outPos={};
-  for(const [s,p] of finalPos){ if(!s.startsWith('__tmp_')) outPos[s]={...p,key:true}; }
-  const usedCells=new Set(Object.values(outPos).map(p=>p.x+','+p.y));
-  // 对每条臂：用布线路径的长度比例决定普通站位置
-  for (const l of lines) for (const arm of l.arms) {
-    const keyIdx=[];
-    for(let k=0;k<arm.length;k++) if(isKey(arm[k])) keyIdx.push(k);
-    for(let t=0;t<keyIdx.length-1;t++){
-      const si=keyIdx[t], ei=keyIdx[t+1];
-      const A=pos.get(arm[si]), B=pos.get(arm[ei]);
-      if(!A||!B)continue;
-      // 找对应的 routed 边
-      const rr=routed.find(r=>((r.a===arm[si]&&r.b===arm[ei])||(r.a===arm[ei]&&r.b===arm[si])));
-      const mid=arm.slice(si+1,ei);
-      let seq;
-      if(rr){
-        const fwd=rr.a===arm[si];
-        seq=fwd?rr.path:rr.path.slice().reverse();
-      } else {
-        // 布线失败：构造 A→B 的八方向楼梯路径，保证普通站有独立格位
-        seq=[{x:A.x,y:A.y}];
-        let cx=A.x, cy=A.y;
-        const dx=B.x-A.x, dy=B.y-A.y;
-        const adx=Math.abs(dx), ady=Math.abs(dy);
-        const sx=Math.sign(dx), sy=Math.sign(dy);
-        const diag=Math.min(adx,ady);
-        for(let t=0;t<diag;t++){cx+=sx;cy+=sy;seq.push({x:cx,y:cy});}
-        for(let t=0;t<adx-diag;t++){cx+=sx;seq.push({x:cx,y:cy});}
-        for(let t=0;t<ady-diag;t++){cy+=sy;seq.push({x:cx,y:cy});}
-        if(seq[seq.length-1].x!==B.x||seq[seq.length-1].y!==B.y)seq.push({x:B.x,y:B.y});
+  // ---------- 3b. 换乘站位置优化：移动关键站使共线三元组最多（拐角最少） ----------
+  // 用户思路：先固定换乘站骨架，再通过移动换乘站减少拐角，最后插回普通站。
+  // 评分 = 共线三元组数（越大越直） - 地理偏移惩罚 - 重合惩罚。
+  // 每个关键站记录所有经过它的 (prev, self, next) 上下文；移动时联合评估。
+  {
+    const ctxOf = new Map(); // station -> [[prev, next], ...]
+    for (const l of lines) for (const arm of l.arms) {
+      const seq = arm.filter(s => isKey(s));
+      for (let k = 1; k < seq.length - 1; k++) {
+        const s = seq[k];
+        if (!ctxOf.has(s)) ctxOf.has(s) || ctxOf.set(s, []);
+        ctxOf.get(s).push([seq[k - 1], seq[k + 1]]);
       }
-      // 沿路径按等间隔选格点：确保站间距≥1且严格落在路径的八方向格上
-      const usable=seq.filter(c=>{
-        // 排除起终点（已放关键站），其余只要未被占用
-        const isA=(c.x===A.x&&c.y===A.y), isB=(c.x===B.x&&c.y===B.y);
-        return !isA && !isB && !usedCells.has(c.x+','+c.y);
-      });
-      const m=mid.length;
-      // 若路径格点不够容纳中间站，沿路径插入额外格点（保持八方向）
-      while(seq.length < m+2){
-        let extended=false;
-        for(let j=0;j<seq.length-1 && !extended;j++){
-          const a=seq[j], b=seq[j+1];
-          const dx=b.x-a.x, dy=b.y-a.y;
-          if(Math.abs(dx)+Math.abs(dy)<=1)continue;
-          // 在 a,b 间插入一个八方向中间点
-          let mx,my;
-          if(dx===0){mx=a.x;my=a.y+Math.sign(dy);}
-          else if(dy===0){mx=a.x+Math.sign(dx);my=a.y;}
-          else {mx=a.x+Math.sign(dx);my=a.y+Math.sign(dy);}
-          if(!usedCells.has(mx+','+my)){seq.splice(j+1,0,{x:mx,y:my});extended=true;}
+    }
+    // 占位表：位置 -> station
+    const at = new Map();
+    for (const [s, p] of pos) at.set(p.x + ',' + p.y, s);
+    // 软评分：用“转角步数”衡量弯曲，0=完全直，1=135°钝角，2=90°直角。
+    // 旧版只在“恰好共线”时 +1，导致 45° 小折弯没有代价、整条线仍像楼梯。
+    const bendAt = (A, X, C) => {
+      const ax = X.x - A.x, ay = X.y - A.y;
+      const bx = C.x - X.x, by = C.y - X.y;
+      if ((!ax && !ay) || (!bx && !by)) return 0;
+      let d = Math.abs(octSnap(bx, by) - octSnap(ax, ay));
+      if (d > 4) d = 8 - d;
+      return d >= 3 ? 4 : d;
+    };
+    // 局部评分：只看受 B 移动影响的三元组；越低越直
+    const scoreAt = (s, X, otherPos) => {
+      let sc = 0, n = 0;
+      for (const [p, q] of (ctxOf.get(s) || [])) {
+        const A = otherPos(p), C = otherPos(q);
+        if (!A || !C) continue;
+        sc += bendAt(A, X, C); n++;
+      }
+      return n ? sc / n : 0;
+    };
+    const getPos = s => pos.get(s);
+    // s 的每个相邻关键站：必须保留足够格距容纳中间普通站，否则插回时会丢站
+    const keyNeighbors = new Map(); // s -> [[neighbor, minDist], ...]
+    for (const l of lines) for (const arm of l.arms) {
+      const seq = arm.filter(x => isKey(x));
+      for (let k = 0; k < seq.length - 1; k++) {
+        const between = Math.abs(arm.indexOf(seq[k+1]) - arm.indexOf(seq[k])) - 1;
+        const need = between + 1;
+        if (!keyNeighbors.has(seq[k])) keyNeighbors.set(seq[k], []);
+        if (!keyNeighbors.has(seq[k+1])) keyNeighbors.set(seq[k+1], []);
+        keyNeighbors.get(seq[k]).push([seq[k+1], need]);
+        keyNeighbors.get(seq[k+1]).push([seq[k], need]);
+      }
+    }
+    const spacingOK = (s, X) => {
+      for (const [nb, need] of (keyNeighbors.get(s) || [])) {
+        const Q = pos.get(nb); if (!Q) continue;
+        // 八方向路径的最短格数是切比雪夫距离，不是欧氏距离
+        if (Math.max(Math.abs(X.x - Q.x), Math.abs(X.y - Q.y)) < need) return false;
+      }
+      return true;
+    };
+    const OPT_PASSES = opt.keyPasses ?? 6;
+    for (let pass = 0; pass < OPT_PASSES; pass++) {
+      // 随机顺序，避免总是同一批站先动
+      const order = [...keyStations];
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = (rnd() * (i + 1)) | 0;
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      let moved = 0;
+      for (const s of order) {
+        const ctx = ctxOf.get(s) || [];
+        if (!ctx.length) continue; // 端点/孤立站不参与（移动它没有共线收益）
+        const P = pos.get(s), home = { x: gx(s), y: gy(s) };
+        const oldKey = P.x + ',' + P.y;
+        const baseScore = scoreAt(s, P, getPos);
+        let best = null, bestGain = 0.01;
+        // 候选：周围 ±4 格（先近后远），且与邻居共线的方向优先
+        for (let rad = 1; rad <= 8; rad++) {
+          for (let dx = -rad; dx <= rad; dx++) for (let dy = -rad; dy <= rad; dy++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+            const X = { x: P.x + dx, y: P.y + dy };
+            const k = X.x + ',' + X.y;
+            if (k !== oldKey && at.has(k)) continue; // 不重合
+            if (!spacingOK(s, X)) continue; // 必须给中间普通站留够格点
+            // 地理保真：离吸附原位越远惩罚越大（主城权重更高）
+            const dist = Math.hypot(X.x - home.x, X.y - home.y);
+            const gain = baseScore - scoreAt(s, X, getPos) - dist * (opt.homeWeight ?? 0.012);
+            if (gain > bestGain) { bestGain = gain; best = X; }
+          }
+          if (best) break; // 近处有改善就不再试更远
         }
-        if(!extended)break;
+        if (best) {
+          at.delete(oldKey);
+          P.x = best.x; P.y = best.y;
+          at.set(best.x + ',' + best.y, s);
+          moved++;
+        }
       }
-      const usable2=seq.filter(c=>{
-        const isA=(c.x===A.x&&c.y===A.y), isB=(c.x===B.x&&c.y===B.y);
-        return !isA && !isB && !usedCells.has(c.x+','+c.y);
-      });
-      const pool=usable2.length?usable2:usable;
-      for(let k=0;k<m;k++){
-        const idx=Math.min(pool.length-1,k);
-        const q=pool[idx]||seq[Math.min(seq.length-1,k+1)];
-        outPos[mid[k]]={x:q.x,y:q.y,key:false};
-        usedCells.add(q.x+','+q.y);
-      }
-    }
-    // 端点外侧普通站：沿首尾方向外推
-    const fk=keyIdx[0], lk=keyIdx[keyIdx.length-1];
-    for(let k=0;k<fk;k++){
-      const A=pos.get(arm[fk]), B=pos.get(arm[fk+1])||A;
-      const d=octSnap(A.x-B.x,A.y-B.y);
-      outPos[arm[k]]={x:A.x+DIRV[d][0]*(fk-k),y:A.y+DIRV[d][1]*(fk-k),key:false};
-    }
-    for(let k=lk+1;k<arm.length;k++){
-      const A=pos.get(arm[lk]), B=pos.get(arm[lk-1])||A;
-      const d=octSnap(A.x-B.x,A.y-B.y);
-      outPos[arm[k]]={x:A.x+DIRV[d][0]*(k-lk),y:A.y+DIRV[d][1]*(k-lk),key:false};
+      if (opt.verbose && pass % 2 === 0) console.error('  key-opt pass', pass, 'moved', moved);
+      if (!moved) break;
     }
   }
 
-  // ---------- 6b. 合法性修复：把违规站移到前后站的八方向合法格 ----------
-  // 对每个普通站，若与相邻站不成八方向，在相邻站周围找合法且不重合的格点
-  const usedAfter=new Set(Object.values(outPos).map(p=>p.x+','+p.y));
-  for(let iter=0;iter<10;iter++){
-    let fixed=0;
-    for(const l of lines)for(const arm of l.arms){
-      for(let k=0;k<arm.length;k++){
-        const s=arm[k]; const C=outPos[s];
-        if(!C)continue;
-        // 关键站也修复：同步更新 pos（布线图）与 outPos
-        const isKeyC=C.key;
-        const prev=arm[k-1], next=arm[k+1];
-        const PA=prev?outPos[prev]:null, PB=next?outPos[next]:null;
-        const A=outPos[arm[k-1]], B=outPos[arm[k+1]];
-        if(!A||!B)continue;
-        if(octLegal(A.x,A.y,C.x,C.y) && octLegal(C.x,C.y,B.x,B.y))continue;
-        // 候选：以 A 为中心，朝 B 方向的八方向格点；或 A/B 周围的合法格
-        const cands=[];
-        const dx=B.x-A.x,dy=B.y-A.y;
-        const dirs=DIRV;
-        for(const [ux,uy] of dirs)for(let L=1;L<=8;L++){
-          cands.push({x:A.x+ux*L,y:A.y+uy*L});
-          cands.push({x:B.x+ux*L,y:B.y+uy*L});
+  // ---------- 3b. 方向松弛：把关键站整体拉向“邻居—八方向”位置 ----------
+  // 局部换位只能消掉个别折角；这里让整条走廊一起收敛，避免每个换乘站都拐一下。
+  {
+    const relax = new Map();
+    const home = new Map();
+    for (const s of keyStations) {
+      const p = pos.get(s); if (!p) continue;
+      relax.set(s, { x: p.x, y: p.y });
+      home.set(s, { x: gx(s), y: gy(s) });
+    }
+    const nbr = new Map();
+    for (const e of edges) {
+      if (!relax.has(e.a) || !relax.has(e.b)) continue;
+      if (!nbr.has(e.a)) nbr.set(e.a, []);
+      if (!nbr.has(e.b)) nbr.set(e.b, []);
+      nbr.get(e.a).push(e.b); nbr.get(e.b).push(e.a);
+    }
+    let step = 0.30;
+    for (let it = 0; it < 90; it++) {
+      const moved = [];
+      for (const s of keyStations) {
+        const P = relax.get(s); if (!P) continue;
+        const ns = nbr.get(s) || [];
+        if (!ns.length) continue;
+        let tx = 0, ty = 0, c = 0;
+        for (const q of ns) {
+          const Q = relax.get(q); if (!Q) continue;
+          const dx = Q.x - P.x, dy = Q.y - P.y;
+          if (!dx && !dy) continue;
+          const dir = octSnap(dx, dy);
+          const len = Math.max(Math.abs(dx), Math.abs(dy), 2.4);
+          tx += Q.x - DIRV[dir][0] * len;
+          ty += Q.y - DIRV[dir][1] * len;
+          c++;
         }
-        cands.sort((p,q)=>{
-          const sp=Math.hypot(p.x-(A.x+B.x)/2,p.y-(A.y+B.y)/2);
-          const sq=Math.hypot(q.x-(A.x+B.x)/2,q.y-(A.y+B.y)/2);
-          return sp-sq;
-        });
-        let best=null;
-        for(const c of cands){
-          if(usedAfter.has(c.x+','+c.y))continue;
-          if(!octLegal(A.x,A.y,c.x,c.y)||!octLegal(c.x,c.y,B.x,B.y))continue;
-          best=c;break;
-        }
-        if(best){
-          usedAfter.delete(C.x+','+C.y);
-          C.x=best.x;C.y=best.y;
-          usedAfter.add(best.x+','+best.y);
-          if(isKeyC && pos.has(s)) { pos.get(s).x=best.x; pos.get(s).y=best.y; }
-          fixed++;
+        if (!c) continue;
+        const H = home.get(s);
+        const ax = tx / c, ay = ty / c;
+        moved.push([s, P.x + (ax - P.x) * step + (H.x - P.x) * 0.001,
+                       P.y + (ay - P.y) * step + (H.y - P.y) * 0.001]);
+      }
+      for (const [s, x, y] of moved) { const P = relax.get(s); P.x = x; P.y = y; }
+      step *= 0.98;
+    }
+    // 回整数格：优先保留原格，冲突时退回旧坐标，避免站点重合
+    const taken = new Set([...pos.values()].map(octiCell));
+    for (const station of keyStations) {
+      const target = relax.get(station);
+      const old = pos.get(station);
+      const point = { x: Math.round(target.x), y: Math.round(target.y) };
+      taken.delete(octiCell(old));
+      if (!taken.has(octiCell(point))) pos.set(station, point);
+      taken.add(octiCell(pos.get(station)));
+    }
+  }
+
+  // 保留站点周围的进出站方向。密集换乘站逐个落位，避免被邻站堵死。
+  const separated = new Set();
+  const spacing = opt.spacing;
+  for (const id of [...pos.keys()].sort((a, b) => use.get(b) - use.get(a))) {
+    const origin = pos.get(id);
+    let point;
+    for (let ring = 0; !point; ring++) {
+      for (let x = -ring; !point && x <= ring; x++) {
+        for (let y = -ring; !point && y <= ring; y++) {
+          if (Math.max(Math.abs(x), Math.abs(y)) !== ring) continue;
+          const p = { x: origin.x + x, y: origin.y + y };
+          if (!separated.has(octiCell(p))) point = p;
         }
       }
     }
-    if(!fixed)break;
+    pos.set(id, point);
+    for (let x = 1 - spacing; x < spacing; x++) for (let y = 1 - spacing; y < spacing; y++) {
+      separated.add(octiCell({ x: point.x + x, y: point.y + y }));
+    }
   }
 
-  // ---------- 7. 指标 ----------
-  let viol=0,straight=0,total=0,col=0;
-  const seen=new Set();
-  for(const p of Object.values(outPos)){const k=p.x+','+p.y;if(seen.has(k))col++;seen.add(k);}
-  for(const l of lines)for(const arm of l.arms){
-    for(let k=0;k<arm.length-1;k++){
-      const A=outPos[arm[k]],B=outPos[arm[k+1]];if(!A||!B)continue;
-      if(!octLegal(A.x,A.y,B.x,B.y))viol++;
+  // 先安排只有一条运行臂、至多一个换乘站的线路。共用站作为锚点，整条线共线。
+  const keyCells = new Map([...pos].map(([name, point]) => [octiCell(point), name]));
+  const linear = new Map();
+  const straightCells = new Set();
+  for (const line of lines) {
+    if (line.arms.length !== 1) continue;
+    const [arm] = line.arms;
+    if (arm.length < 2 || new Set(arm).size !== arm.length) continue;
+    const shared = arm.filter(id => services.get(id).size > 1);
+    if (shared.length > 1) continue;
+    const oldEndpoints = arm.filter(id => pos.has(id) && !shared.includes(id));
+    for (const id of oldEndpoints) keyCells.delete(octiCell(pos.get(id)));
+    const start = pos.get(arm[0]), finish = pos.get(arm.at(-1));
+    const preferred = octiHeading(stData[arm[0]], stData[arm.at(-1)]);
+    const anchorIndex = shared.length ? arm.indexOf(shared[0]) : Math.floor(arm.length / 2);
+    const center = shared.length ? pos.get(shared[0]) : {
+      x: Math.round((start.x + finish.x) / 2), y: Math.round((start.y + finish.y) / 2),
+    };
+    const directions = DIRV.map((_, i) => i).sort((a, b) =>
+      turnSteps(a, preferred) - turnSteps(b, preferred) || a % 2 - b % 2);
+    let best;
+    for (let ring = 0; !best && ring <= (shared.length ? 0 : 48); ring++) {
+      for (let dx = -ring; !best && dx <= ring; dx++) {
+        for (let dy = -ring; !best && dy <= ring; dy++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+          for (const dir of directions) {
+            if (best) break;
+            const [ux, uy] = DIRV[dir];
+            for (const spacing of [3, 4, 2, 5, 6, 7]) {
+              const origin = { x: center.x + dx - anchorIndex * ux * spacing, y: center.y + dy - anchorIndex * uy * spacing };
+              const path = Array.from({ length: (arm.length - 1) * spacing + 1 },
+                (_, i) => ({ x: origin.x + i * ux, y: origin.y + i * uy }));
+              if (path.some(p => keyCells.has(octiCell(p)) && keyCells.get(octiCell(p)) !== shared[0])) continue;
+              if (arm.some((id, i) => id !== shared[0] && straightCells.has(octiCell(path[i * spacing])))) continue;
+              best = { line: line.id, arm, path, stations: arm.map((_, i) => i * spacing) };
+              break;
+            }
+          }
+        }
+      }
     }
-    for(let k=1;k<arm.length-1;k++){
-      const a=outPos[arm[k-1]],b=outPos[arm[k]],c=outPos[arm[k+1]];if(!a||!b||!c)continue;
-      const d1=octSnap(b.x-a.x,b.y-a.y),d2=octSnap(c.x-b.x,c.y-b.y);
-      total++;if(d1===d2)straight++;
+    if (!best) {
+      for (const id of oldEndpoints) keyCells.set(octiCell(pos.get(id)), id);
+      continue;
     }
+    for (const [i, id] of arm.entries()) {
+      const point = best.path[best.stations[i]];
+      pos.set(id, point);
+      keyCells.set(octiCell(point), id);
+    }
+    linear.set(line.id, best);
+    for (const point of best.path) straightCells.add(octiCell(point));
+  }
+
+  const grid = new OctiGrid(pos);
+  const plans = [], routed = [];
+  const outPos = Object.create(null), usedPoints = new Set();
+  for (const [id, point] of pos) {
+    outPos[id] = { ...point, key: isKey(id) };
+    usedPoints.add(octiCell(point));
+  }
+  for (const plan of linear.values()) grid.reserve(plan.path);
+
+  function stationMarks(path, arm, start, end) {
+    const marks = [], taken = new Set();
+    const interval = (path.length - 1) / (end - start);
+    for (let i = start + 1; i < end; i++) {
+      const target = (i - start) * interval;
+      let mark;
+      // 同一停靠序列各有自己的弧长区间。优先选择最接近等距分布的独占轨段。
+      for (let attempt = 0; attempt < 40 && !mark; attempt++) {
+        const offset = attempt === 0 ? 0 : (attempt % 2 ? -1 : 1) * Math.ceil(attempt / 2) * 0.022;
+        const at = target + offset * interval;
+        const j = Math.floor(at), f = at - j;
+        if (f < 0.0001 || f > 0.9999 || Math.abs(f - 0.5) < 0.0001) continue;
+        const a = path[j], b = path[j + 1];
+        const edge = grid.step(a, b);
+        if (grid.tracks[edge]) continue;
+        const point = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+        const key = octiCell(point);
+        if (usedPoints.has(key) || taken.has(key)) continue;
+        mark = { id: arm[i], at, point: { ...point, station: true }, edge };
+        taken.add(key);
+      }
+      if (!mark) return null;
+      marks.push(mark);
+    }
+    return marks;
+  }
+
+  // 每个运行臂独立接续方向。包含普通站的轨段会保留给本线，后续线路可以跨过轨段但不会穿过其站点。
+  for (const line of lines) {
+    if (linear.has(line.id)) {
+      plans.push(linear.get(line.id));
+      continue;
+    }
+    const sharedTracks = new Map();
+    const trackKey = (a, b) => JSON.stringify([a, b]);
+    for (const arm of line.arms) {
+      if (arm.length < 2) continue;
+      const anchors = arm.flatMap((id, i) => pos.has(id) ? [i] : []);
+      const firstTransfer = arm.findIndex(id => services.get(id).size > 1);
+      const lastTransfer = arm.findLastIndex(id => services.get(id).size > 1);
+      const fragments = [];
+      let incoming = null;
+      let firstHeading = null;
+      for (let i = 1; i < anchors.length; i++) {
+        const start = anchors[i - 1], end = anchors[i];
+        const a = arm[start], b = arm[end], c = arm[anchors[i + 1]];
+        const from = pos.get(a), to = pos.get(b), next = pos.get(c);
+        const closes = i === anchors.length - 1 && arm[0] === arm.at(-1);
+        const trunk = start >= firstTransfer && end <= lastTransfer;
+        const heading = next ? octiHeading(to, next) : null;
+        const cached = end === start + 1 ? sharedTracks.get(trackKey(a, b)) : null;
+        const joining = anchors[i + 1] === end + 1 ? sharedTracks.get(trackKey(b, c)) : null;
+        const closing = closes ? firstHeading : (joining ? octiHeading(joining[0], joining[1]) : null);
+        const continueIn = !cached || incoming == null || turnSteps(incoming, octiHeading(cached[0], cached[1])) <= 2;
+        const continueOut = !cached || closing == null || turnSteps(octiHeading(cached.at(-2), cached.at(-1)), closing) <= 2;
+        let path = cached && continueIn && continueOut ? cached
+          : grid.route(from, to, incoming, heading, closing, trunk, false);
+        let marks = path && stationMarks(path, arm, start, end);
+        if (path && !marks) {
+          path = grid.route(from, to, incoming, heading, closing, trunk, true);
+          marks = path && stationMarks(path, arm, start, end);
+        }
+        if (!marks) throw new OctiRoutingError('无法布线：' + line.id + ' ' + arm[start] + ' → ' + arm[end]);
+        if (firstHeading == null) firstHeading = octiHeading(path[0], path[1]);
+        incoming = octiHeading(path.at(-2), path.at(-1));
+        if (path !== cached) grid.reserve(path, marks);
+        if (end === start + 1 && !cached) {
+          sharedTracks.set(trackKey(a, b), path);
+          sharedTracks.set(trackKey(b, a), path.slice().reverse());
+        }
+        for (const { id, point } of marks) {
+          outPos[id] = { x: point.x, y: point.y, key: false };
+          usedPoints.add(octiCell(point));
+        }
+        routed.push({ a: arm[start], b: arm[end], line: line.id, path });
+        fragments.push({ path, marks });
+      }
+      plans.push({ line: line.id, arm, fragments });
+    }
+  }
+
+  function compact(path) {
+    const result = [];
+    for (const point of path) {
+      const last = result.at(-1), prev = result.at(-2);
+      if (last && octiCell(last) === octiCell(point)) continue;
+      if (prev && !last.station && octiHeading(prev, last) === octiHeading(last, point)) result.pop();
+      result.push(point);
+    }
+    return result;
+  }
+  const routes = [];
+  for (const plan of plans) {
+    const points = [];
+    if (plan.path) {
+      for (const at of plan.stations) points.push({ ...plan.path[at], station: true });
+    } else {
+      for (const { path, marks } of plan.fragments) {
+        if (!points.length) points.push({ ...path[0], station: true });
+        for (let i = 1, mark = 0; i < path.length; i++) {
+          while (mark < marks.length && marks[mark].at < i) points.push(marks[mark++].point);
+          points.push(i === path.length - 1 ? { ...path[i], station: true } : path[i]);
+        }
+      }
+    }
+    routes.push({ line: plan.line, arm: plan.arm.slice(), points: compact(points) });
+  }
+
+  let total = 0, straight = 0, acuteTurns = 0, octViolations = 0;
+  for (const route of routes) {
+    const points = route.points;
+    let previous = null;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
+      if (dx > 1e-7 && dy > 1e-7 && Math.abs(dx - dy) > 1e-7) octViolations++;
+      const heading = octiHeading(a, b);
+      if (previous != null) {
+        total++;
+        if (heading === previous) straight++;
+        if (turnSteps(previous, heading) > 2) acuteTurns++;
+      }
+      previous = heading;
+    }
+    if (route.arm[0] === route.arm.at(-1) && turnSteps(previous, octiHeading(points[0], points[1])) > 2) acuteTurns++;
   }
   return {
-    pos, outPos, routed, failed,
-    metrics:{
-      keyNodes:keyStations.length, edges:edges.length, routed:routed.length, failed:failed.length,
-      octViolations:viol, collisions:col,
-      straightRate: total?+(straight/total).toFixed(3):0, totalCorners:total,
-      grid:[W,H]
-    }
+    pos, outPos, routed, failed: [], routes,
+    metrics: {
+      keyNodes: keyStations.length, edges: edges.length, routed: edges.length, failed: 0,
+      octViolations, acuteTurns, collisions: Object.keys(outPos).length - usedPoints.size,
+      straightRate: total ? straight / total : 1, totalCorners: total,
+      grid: [grid.width, grid.height],
+    },
   };
 }
